@@ -1,80 +1,264 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Results - SecureBallot Cloud</title>
-<link rel="stylesheet" href="style.css">
+<script>
+function checkOnline(){
+ if(!navigator.onLine){
+  document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>🔴 No Internet</h1><p>Connect to view results.</p><button onclick="location.reload()" style="padding:12px 20px;border-radius:8px;border:none;margin-top:20px;font-weight:bold">Retry</button></div></div>`;
+  return false;
+ } return true;
+}
+window.addEventListener("load", checkOnline);
+window.addEventListener("offline", checkOnline);
+window.addEventListener("online", ()=>location.reload());
+setInterval(checkOnline,3000);
+</script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Results - Multi-Org Cloud + Full Export</title>
+<link rel="stylesheet" href="style.css" />
+<style>
+.hidden{display:none}
+select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #ccc}
+.rank-1{background:#e8f5e9;border:2px solid #27ae60!important}
+.badge-winner{background:#27ae60;color:white;padding:2px 8px;border-radius:12px;font-size:11px;margin-left:6px}
+</style>
 </head>
 <body>
-<div class="header"><h2>Live Results - Cloud</h2><a href="index.html" style="color:white">← Back to Vote</a></div>
+<div class="header">
+<h2>Live Results - Multi-Org Cloud</h2>
+<div style="display:flex;gap:8px;align-items:center">
+<span id="orgInfo" style="color:#2ecc71;background:#0a1e3c;padding:4px 8px;border-radius:6px"></span>
+<a href="index.html" style="color:white">← Vote</a>
+</div>
+</div>
 <div class="container">
-  <div class="card">
-    <h1>Live Count - Transparent (Cloud)</h1>
-    <div id="resultsContainer">Loading from cloud...</div>
-    <p id="resultTotal" style="margin-top:15px;font-weight:bold"></p>
-    <p style="font-size:12px;color:#666">Updates instantly when new vote is cast on any device</p>
-    <button onclick="clearResults()" style="background:#c0392b;color:white;margin-top:15px" id="clearBtn" class="hidden">🗑️ Clear All Votes (Super Admin)</button>
-  </div>
+<div class="card">
+<h1>Live Count - Transparent</h1>
+<select id="orgSelect"><option>Loading organizations...</option></select>
+<p style="font-size:12px">Organization: <b id="orgDisplay">Select org</b></p>
+<div id="resultsContainer">Loading from cloud...</div>
+<p id="resultTotal" style="margin-top:15px;font-weight:bold"></p>
+
+<div id="summaryBox" style="margin-top:20px;padding:15px;background:#f8f9fa;border-radius:10px;border:2px dashed #0f2a5a">
+<h3>📋 Rank Summary (For Export)</h3>
+<div id="rankSummary"></div>
+</div>
+
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:15px">
+<button onclick="exportFullDetails()" style="background:#8e44ad;color:white;padding:10px 16px;border-radius:8px;border:none;font-weight:bold">📥 Export FULL Details CSV (Candidates + Votes)</button>
+<button onclick="exportRankSummary()" style="background:#27ae60;color:white;padding:10px 16px;border-radius:8px;border:none;font-weight:bold">🏆 Export Rank Summary CSV</button>
+<button onclick="clearResults()" style="background:#c0392b;color:white;margin-left:auto" id="clearBtn" class="hidden">🗑️ Clear Votes (Super Admin)</button>
+</div>
+<p style="font-size:12px;color:#666">Updates instantly when new vote is cast</p>
+</div>
 </div>
 
 <script type="module">
 import { db, ref, get, remove, onValue } from "./firebase-config.js";
 
-let isSuper = localStorage.getItem('sb_admin_role')==='superadmin';
-if(isSuper) document.getElementById('clearBtn').classList.remove('hidden');
+let allOrgs={};
+let currentOrgSlug="";
+let currentOrgName="";
+let currentData={ byPost:{}, votes:{}, candData:{}, total:0 };
+let isSuper=localStorage.getItem("sb_admin_role")==="superadmin";
+if(isSuper) document.getElementById("clearBtn").classList.remove("hidden");
 
-onValue(ref(db,'votes'), async snap=>{
-  const votes = snap.val()||{};
-  const total = Object.keys(votes).length;
-  
-  const candSnap = await get(ref(db,'candidates'));
-  const postsSnap = await get(ref(db,'posts'));
-  const candData = candSnap.val()||{};
-  const postsData = postsSnap.val()||{};
+function slugify(n){ return n.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
+function isForMyOrg(item){
+ if(!currentOrgSlug) return true;
+ if(!item) return false;
+ if(!item.orgSlug) return true; // backward compat show all if no org
+ return item.orgSlug===currentOrgSlug;
+}
+
+async function loadOrgs(){
+ const orgsSnap=await get(ref(db,"orgs"));
+ const oldSnap=await get(ref(db,"org"));
+ allOrgs=orgsSnap.val()||{};
+ if(oldSnap.exists() &&!allOrgs[slugify(oldSnap.val().name)]){
+  allOrgs[slugify(oldSnap.val().name)]={name:oldSnap.val().name, slug:slugify(oldSnap.val().name)};
+ }
+ const sel=document.getElementById("orgSelect");
+ if(Object.keys(allOrgs).length===0){
+  sel.innerHTML='<option>No orgs setup yet</option>';
+  document.getElementById("resultsContainer").innerHTML='No organization found';
+  return;
+ }
+ let opts='<option value="">-- All Organizations (Nationwide View) --</option>';
+ Object.values(allOrgs).forEach(o=>{ opts+=`<option value="${o.slug}">${o.name}</option>`; });
+ sel.innerHTML=opts;
+
+ // URL param
+ const urlParams=new URLSearchParams(window.location.search);
+ const orgParam=urlParams.get("org") || localStorage.getItem("sb_admin_orgSlug");
+ if(orgParam && allOrgs[orgParam]){
+  sel.value=orgParam;
+  currentOrgSlug=orgParam;
+  currentOrgName=allOrgs[orgParam].name;
+  document.getElementById("orgDisplay").innerText=currentOrgName;
+  document.getElementById("orgInfo").innerText=currentOrgName;
+ } else {
+  document.getElementById("orgDisplay").innerText="All Orgs - Nationwide";
+ }
+
+ sel.addEventListener("change", e=>{
+  currentOrgSlug=e.target.value;
+  currentOrgName=currentOrgSlug? allOrgs[currentOrgSlug]?.name : "";
+  document.getElementById("orgDisplay").innerText=currentOrgName||"All Organizations";
+  document.getElementById("orgInfo").innerText=currentOrgName||"All Orgs";
+  loadResults();
+ });
+
+ loadResults();
+}
+
+function loadResults(){
+ onValue(ref(db, "votes"), async (snap)=>{
+  const allVotes=snap.val()||{};
+  const votes=currentOrgSlug? Object.fromEntries(Object.entries(allVotes).filter(([k,v])=>isForMyOrg(v))) : allVotes;
+
+  const candSnap=await get(ref(db, "candidates"));
+  const allCands=candSnap.val()||{};
+  const candData=currentOrgSlug? Object.fromEntries(Object.entries(allCands).filter(([k,v])=>isForMyOrg(v))) : allCands;
+
+  const postsSnap=await get(ref(db, "posts"));
+  const allPosts=postsSnap.val()||{};
+  const postsData=currentOrgSlug? Object.fromEntries(Object.entries(allPosts).filter(([k,v])=>isForMyOrg(v))) : allPosts;
+
+  currentData.votes=votes;
+  currentData.candData=candData;
+  currentData.total=Object.keys(votes).length;
 
   if(Object.keys(candData).length===0){
-    document.getElementById('resultsContainer').innerHTML = `<div style="text-align:center;padding:30px"><h3 style="color:#c0392b">⚠️ No Candidates Created Yet</h3><p>Admin has not added any Posts or Candidates in cloud.</p><p>Go to Admin Panel → Posts & Candidates tab</p></div>`;
-    document.getElementById('resultTotal').innerText = `Total Votes Cast: ${total} (but no candidates to map)`;
-    return;
+   document.getElementById("resultsContainer").innerHTML=`<div style="text-align:center;padding:30px"><h3 style="color:#c0392b">⚠️ No Candidates in ${currentOrgName||'system'}</h3><p>Admin has not added Posts/Candidates for this org.</p></div>`;
+   document.getElementById("resultTotal").innerText=`Total Votes: ${currentData.total}`;
+   document.getElementById("rankSummary").innerHTML="No candidates";
+   return;
   }
 
-  // Group by post
-  const byPost = {};
+  const byPost={};
   Object.values(candData).forEach(c=>{
-    if(!byPost[c.postId]) byPost[c.postId] = {name: c.postName, cands:{}};
-    byPost[c.postId].cands[c.id] = {...c, count:0};
+   if(!byPost[c.postId]) byPost[c.postId]={postId:c.postId, name:c.postName, cands:{}};
+   byPost[c.postId].cands[c.id]={...c, count:0, percentage:0, rank:0};
   });
   Object.values(votes).forEach(v=>{
-    if(byPost[v.postId] && byPost[v.postId].cands[v.candidateId]) byPost[v.postId].cands[v.candidateId].count++;
+   if(byPost[v.postId] && byPost[v.postId].cands[v.candidateId]) byPost[v.postId].cands[v.candidateId].count++;
   });
 
-  let html = "";
+  // Rank per post
   Object.values(byPost).forEach(post=>{
-    const postTotal = Object.values(post.cands).reduce((s,x)=>s+x.count,0);
-    html+= `<div style="margin:20px 0;padding:15px;border:2px solid #0f2a5a;border-radius:10px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - ${postTotal} votes</h3>`;
-    const sorted = Object.values(post.cands).sort((a,b)=>b.count-a.count);
-    sorted.forEach((c,i)=>{
-      const per = postTotal?Math.round(c.count/postTotal*100):0;
-      const isWinner = i===0 && c.count>0;
-      html+= `<div style="margin:10px 0;${isWinner?'background:#e8f5e9;padding:8px;border-radius:6px;border:1px solid #27ae60':''}">
-        <div style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;gap:10px;align-items:center"><img src="${c.photo}" width="40" height="40" style="border-radius:50%"><b>${c.name} ${isWinner?'👑 WINNER':''}</b></div><span>${c.count} (${per}%)</span></div>
-        <div style="background:#eee;height:18px;border-radius:10px;overflow:hidden;margin-top:6px"><div style="background:${isWinner?'#27ae60':'#3498db'};width:${per}%;height:100%;transition:width 0.5s"></div></div>
-        <small style="color:#666">${c.party} - ${c.manifesto}</small>
-      </div>`;
-    });
-    html+= `</div>`;
+   const total=Object.values(post.cands).reduce((s,x)=>s+x.count,0);
+   const sorted=Object.values(post.cands).sort((a,b)=>b.count-a.count);
+   sorted.forEach((c, idx)=>{
+    c.rank=idx+1;
+    c.percentage= total? Math.round((c.count/total)*100) : 0;
+    // update back
+    byPost[post.postId].cands[c.id]=c;
+   });
   });
 
-  document.getElementById('resultsContainer').innerHTML = html || "No data";
-  document.getElementById('resultTotal').innerText = `Total Vote Records in Cloud (ballot-da7cb): ${total}`;
-});
+  currentData.byPost=byPost;
+
+  let html="";
+  let rankHtml=`<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="background:#0f2a5a;color:white"><th style="padding:6px;border:1px solid #ddd">Post</th><th style="padding:6px;border:1px solid #ddd">Rank</th><th style="padding:6px;border:1px solid #ddd">Candidate</th><th style="padding:6px;border:1px solid #ddd">Party</th><th style="padding:6px;border:1px solid #ddd">Votes</th><th style="padding:6px;border:1px solid #ddd">%</th><th style="padding:6px;border:1px solid #ddd">Status</th></tr>`;
+
+  Object.values(byPost).forEach(post=>{
+   const postTotal=Object.values(post.cands).reduce((s,x)=>s+x.count,0);
+   html+=`<div style="margin:20px 0;padding:15px;border:2px solid #0f2a5a;border-radius:10px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - ${postTotal} votes in ${currentOrgName||'All Orgs'}</h3>`;
+   const sorted=Object.values(post.cands).sort((a,b)=>a.rank-b.rank);
+   sorted.forEach(c=>{
+    const isWinner=c.rank===1 && c.count>0;
+    html+=`<div style="margin:10px 0;padding:8px;border-radius:6px;border:1px solid #ddd;${isWinner?'background:#e8f5e9;border:2px solid #27ae60':''}">
+     <div style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;gap:10px;align-items:center"><img src="${c.photo}" width="40" height="40" style="border-radius:50%"><div><b>#${c.rank} ${c.name} ${isWinner?'<span class=badge-winner>👑 WINNER</span>':''}</b><br><small>${c.party} - ID:${c.id}</small><br><small style="color:#666">${c.manifesto||'No manifesto'}</small></div></div><span style="font-weight:bold">${c.count} votes (${c.percentage}%)</span></div>
+     <div style="background:#eee;height:18px;border-radius:10px;overflow:hidden;margin-top:6px"><div style="background:${isWinner?'#27ae60':'#3498db'};width:${c.percentage}%;height:100%"></div></div>
+    </div>`;
+    rankHtml+=`<tr style="${isWinner?'background:#e8f5e9;font-weight:bold':''}"><td style="padding:6px;border:1px solid #ddd">${post.name}</td><td style="padding:6px;border:1px solid #ddd">#${c.rank}</td><td style="padding:6px;border:1px solid #ddd">${c.name}</td><td style="padding:6px;border:1px solid #ddd">${c.party}</td><td style="padding:6px;border:1px solid #ddd">${c.count}</td><td style="padding:6px;border:1px solid #ddd">${c.percentage}%</td><td style="padding:6px;border:1px solid #ddd">${isWinner?'WINNER':''}</td></tr>`;
+   });
+   html+=`</div>`;
+  });
+  rankHtml+=`</table>`;
+
+  document.getElementById("resultsContainer").innerHTML=html||"No data";
+  document.getElementById("resultTotal").innerText=`Total Vote Records in ${currentOrgName||'All Orgs'} (Cloud): ${currentData.total}`;
+  document.getElementById("rankSummary").innerHTML=rankHtml;
+ });
+}
+
+window.exportFullDetails = function(){
+ // FULL DETAILS: Candidate + Votes + Organization
+ let csv="";
+ csv+="SecureBallot FULL DETAILS EXPORT\n";
+ csv+=`Organization,${currentOrgName||'All Organizations'}\n`;
+ csv+=`Exported At,${new Date().toLocaleString()}\n`;
+ csv+=`Total Votes,${currentData.total}\n\n`;
+
+ csv+="SECTION 1: RANK SUMMARY WITH CANDIDATE FULL DETAILS\n";
+ csv+="Post Name,Rank,Candidate ID,Candidate Name,Party,Manifesto,Photo URL,Votes Count,Percentage,Status,Organization,Org Slug,Created By\n";
+ Object.values(currentData.byPost||{}).forEach(post=>{
+  Object.values(post.cands).sort((a,b)=>a.rank-b.rank).forEach(c=>{
+   const isWinner=c.rank===1 && c.count>0? "WINNER":"";
+   csv+=`"${post.name}",${c.rank},"${c.id}","${c.name}","${c.party}","${(c.manifesto||'').replace(/"/g,'""')}","${c.photo}",${c.count},${c.percentage}%,"${isWinner}","${c.org||currentOrgName||''}","${c.orgSlug||''}","${c.created||''}"\n`;
+  });
+ });
+
+ csv+="\nSECTION 2: DETAILED VOTE RECORDS WITH FULL CANDIDATE INFO\n";
+ csv+="VoteID,Organization,Org Slug,Post Name,Post ID,Candidate Name,Candidate ID,Party,Manifesto,Candidate Photo,Voter Name,Voter ID Hash,Voter ID,Timestamp\n";
+ Object.entries(currentData.votes||{}).forEach(([voteId, v])=>{
+  const cand=currentData.candData[v.candidateId] || {};
+  const postName= cand.postName || v.postId || "";
+  csv+=`"${voteId}","${v.org||cand.org||currentOrgName||''}","${v.orgSlug||cand.orgSlug||''}","${postName}","${v.postId}","${cand.name||''}","${v.candidateId}","${cand.party||''}","${(cand.manifesto||'').replace(/"/g,'""')}","${cand.photo||''}","${v.voterName||''}","${v.voterIdHash||''}","${v.voterId||''}","${v.timestamp||''}"\n`;
+ });
+
+ const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
+ const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+ a.download=`SecureBallot_FULL_DETAILS_${currentOrgSlug||'all_orgs'}_${Date.now()}.csv`; a.click();
+};
+
+window.exportRankSummary = function(){
+ // RANK SUMMARY ONLY - Clean for winners declaration
+ let csv="";
+ csv+=`SecureBallot RANK SUMMARY - ${currentOrgName||'All Organizations'}\n`;
+ csv+=`Date,${new Date().toLocaleString()}\n\n`;
+ csv+="Rank,Post Name,Candidate Name,Party,Votes,Percentage,Result,Organization\n";
+ Object.values(currentData.byPost||{}).forEach(post=>{
+  Object.values(post.cands).sort((a,b)=>a.rank-b.rank).forEach(c=>{
+   const result=c.rank===1 && c.count>0? "ELECTED" : c.rank===2? "RUNNER UP" : "";
+   csv+=`${c.rank},"${post.name}","${c.name}","${c.party}",${c.count},${c.percentage}%,"${result}","${currentOrgName||c.org||''}"\n`;
+  });
+ });
+
+ csv+="\nWINNERS LIST\n";
+ csv+="Post,Winner Name,Party,Votes,Organization\n";
+ Object.values(currentData.byPost||{}).forEach(post=>{
+  const winner=Object.values(post.cands).sort((a,b)=>a.rank-b.rank)[0];
+  if(winner && winner.count>0){
+   csv+=`"${post.name}","${winner.name}","${winner.party}",${winner.count},"${currentOrgName||winner.org||''}"\n`;
+  }
+ });
+
+ const blob=new Blob([csv],{type:"text/csv"});
+ const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+ a.download=`SecureBallot_RANK_SUMMARY_${currentOrgSlug||'all_orgs'}_${Date.now()}.csv`; a.click();
+};
 
 window.clearResults = async function(){
-  if(!confirm("Clear ALL votes? This cannot be undone!")) return;
-  await remove(ref(db,'votes'));
-  await remove(ref(db,'voters'));
-  alert("Votes cleared from cloud!");
-}
+ if(!confirm(`Clear ALL votes for ${currentOrgName||'ALL ORGS'}? Cannot undo!`)) return;
+ if(currentOrgSlug){
+  // delete only votes for this org
+  const snap=await get(ref(db,"votes"));
+  const all=snap.val()||{};
+  for(let key in all){ if(isForMyOrg(all[key])) await remove(ref(db,`votes/${key}`)); }
+  const votersSnap=await get(ref(db,"voters"));
+  const allVoters=votersSnap.val()||{};
+  for(let key in allVoters){ if(isForMyOrg(allVoters[key])) await remove(ref(db,`voters/${key}`)); }
+ } else {
+  await remove(ref(db,"votes")); await remove(ref(db,"voters"));
+ }
+ alert("Votes cleared for "+(currentOrgName||"all orgs"));
+};
+
+loadOrgs();
 </script>
 </body>
 </html>
