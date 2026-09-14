@@ -1,92 +1,220 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SecureBallot - Vote Cloud</title><link rel="stylesheet" href="style.css">
+<script>
+function checkOnline(){
+ if(!navigator.onLine){
+  document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>🔴 No Internet</h1><h3>SecureBallot Works Online Only</h3><p>Connect to WiFi/Data to vote.</p><button onclick="location.reload()" style="padding:12px 20px;border-radius:8px;border:none;margin-top:20px;font-weight:bold">Retry</button></div></div>`;
+  return false;
+ }
+ return true;
+}
+window.addEventListener("load", checkOnline);
+window.addEventListener("offline", checkOnline);
+window.addEventListener("online", ()=>location.reload());
+setInterval(checkOnline,3000);
+</script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SecureBallot - Vote Cloud Multi-Org</title>
+<link rel="stylesheet" href="style.css" />
+<style>
+.hidden{display:none}
+.candidate{border:1px solid #ddd;padding:10px;margin:8px 0;border-radius:8px;display:flex;gap:10px;align-items:center;cursor:pointer}
+.candidate.selected{border:2px solid #27ae60;background:#e8f5e9}
+.check{display:none;font-weight:bold;color:#27ae60;margin-left:auto}
+.candidate.selected.check{display:block}
+select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #ccc}
+</style>
 </head>
 <body>
-<div class="header"><h2>🔒 SecureBallot</h2><span id="voterStatus">Approved Voters Only - Cloud</span></div>
-<div class="container" id="loginBox">
-  <div class="card">
-    <h1>Voter Login</h1>
-    <p>Only approved voters can vote. Enter ID.</p>
-    <input type="text" id="idNumber" placeholder="Enter Approved ID Number">
-    <button onclick="verifyVoterMode2()" class="vote-btn">Verify & Proceed to Ballot</button>
-    <p id="verifyMsg" class="note"></p>
-    <p class="note"><a href="register.html">Register Here</a> | <a href="results.html">Live Results</a></p>
-  </div>
+<div class="header">
+<h2>🔒 SecureBallot</h2>
+<span id="voterStatus">Multi-Org Cloud Voting</span>
 </div>
+
+<div class="container" id="loginBox">
+<div class="card">
+<h1>Voter Login</h1>
+<p>Select your Organization first, then enter approved ID.</p>
+<select id="orgSelect"><option>Loading organizations...</option></select>
+<p style="font-size:12px">Organization: <b id="orgDisplay">Select above</b></p>
+
+<input type="text" id="idNumber" placeholder="Enter Approved ID Number" />
+<button onclick="verifyVoterMode2()" class="vote-btn">Verify & Proceed to Ballot →</button>
+<p id="verifyMsg" class="note"></p>
+<p class="note"><a href="register.html">Register Here</a> | <a href="results.html">Live Results</a> | <a href="admin-login.html">Admin</a></p>
+</div>
+</div>
+
 <div class="container hidden" id="voteBox">
-  <h1 id="electionTitle">General Election 2026</h1>
-  <p id="welcomeVoter"></p>
-  <div id="ballotPosts"></div>
-  <button class="vote-btn" onclick="submitVote()">Submit All Votes →</button>
+<h1 id="electionTitle">Election</h1>
+<p id="welcomeVoter"></p>
+<p style="background:#e8f5e9;padding:8px;border-radius:6px">Organization: <b id="voteOrg"></b></p>
+<div id="ballotPosts"></div>
+<button class="vote-btn" onclick="submitVote()">Submit All Votes →</button>
 </div>
 
 <script type="module">
 import { db, ref, get, set, onValue } from "./firebase-config.js";
 let currentVoter=null;
 let selectedVotes={};
+let allOrgs={};
+let currentOrgSlug="";
+let currentOrgName="";
 
-window.verifyVoterMode2=async function(){
-  const id=document.getElementById('idNumber').value.trim();
-  if(!id){document.getElementById('verifyMsg').innerText="Enter ID";return;}
-  document.getElementById('verifyMsg').innerText="Checking cloud...";
-  const votedSnap=await get(ref(db,`voters/${id}`));
-  if(votedSnap.exists()){document.getElementById('verifyMsg').innerText="❌ Already voted! One vote per ID.";return;}
-  const approvedSnap=await get(ref(db,`approved/${id}`));
-  if(!approvedSnap.exists()){
-    const p=await get(ref(db,`pending/${id}`)); const s2=await get(ref(db,`stage2/${id}`));
-    if(p.exists()) document.getElementById('verifyMsg').innerText="⏳ Pending Admin1 approval.";
-    else if(s2.exists()) document.getElementById('verifyMsg').innerText="⏳ Waiting Admin2 final approval.";
-    else document.getElementById('verifyMsg').innerText="❌ ID not found. Register first.";
-    return;
-  }
-  currentVoter=approvedSnap.val();
-  document.getElementById('loginBox').classList.add('hidden');
-  document.getElementById('voteBox').classList.remove('hidden');
-  document.getElementById('welcomeVoter').innerText=`Welcome ${currentVoter.name} (ID: ${currentVoter.id})`;
-  document.getElementById('voterStatus').innerText=`Verified: ${currentVoter.name}`;
-  loadBallot();
+function slugify(n){ return n.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
+
+async function loadOrgs(){
+ const orgsSnap=await get(ref(db,"orgs"));
+ const oldSnap=await get(ref(db,"org"));
+ allOrgs=orgsSnap.val()||{};
+ if(oldSnap.exists() &&!allOrgs[slugify(oldSnap.val().name)]){
+  allOrgs[slugify(oldSnap.val().name)]={name:oldSnap.val().name, slug:slugify(oldSnap.val().name)};
+ }
+ const sel=document.getElementById("orgSelect");
+ if(Object.keys(allOrgs).length===0){
+  sel.innerHTML='<option>No org setup yet</option>';
+  return;
+ }
+ let opts='<option value="">-- Select Your Organization --</option>';
+ Object.values(allOrgs).forEach(o=>{ opts+=`<option value="${o.slug}">${o.name}</option>`; });
+ sel.innerHTML=opts;
+
+ const urlParams=new URLSearchParams(window.location.search);
+ const orgParam=urlParams.get("org");
+ if(orgParam && allOrgs[orgParam]){
+  sel.value=orgParam;
+  currentOrgSlug=orgParam;
+  currentOrgName=allOrgs[orgParam].name;
+  document.getElementById("orgDisplay").innerText=currentOrgName;
+  document.getElementById("voterStatus").innerText=currentOrgName;
+ }
+
+ sel.addEventListener("change", e=>{
+  currentOrgSlug=e.target.value;
+  currentOrgName= currentOrgSlug? allOrgs[currentOrgSlug]?.name : "";
+  document.getElementById("orgDisplay").innerText=currentOrgName||"Select above";
+  document.getElementById("voterStatus").innerText=currentOrgName||"Multi-Org Cloud";
+ });
 }
 
+window.verifyVoterMode2 = async function(){
+ if(!navigator.onLine){ alert("🔴 No Internet - Online only"); return; }
+ const orgSlug=document.getElementById("orgSelect").value.trim();
+ const id=document.getElementById("idNumber").value.trim();
+ if(!orgSlug){ document.getElementById("verifyMsg").innerText="❌ Select Organization first"; return; }
+ if(!id){ document.getElementById("verifyMsg").innerText="Enter ID"; return; }
+ document.getElementById("verifyMsg").innerText=`Checking cloud for ${allOrgs[orgSlug]?.name}...`;
+ currentOrgSlug=orgSlug;
+ currentOrgName=allOrgs[orgSlug]?.name||orgSlug;
+
+ // Check if already voted in this org
+ const votedSnap=await get(ref(db, `voters/${id}`));
+ if(votedSnap.exists()){
+  const v=votedSnap.val();
+  if(!v.orgSlug || v.orgSlug===currentOrgSlug){
+   document.getElementById("verifyMsg").innerText="❌ Already voted in this organization! One vote per ID.";
+   return;
+  }
+ }
+
+ const approvedSnap=await get(ref(db, `approved/${id}`));
+ if(!approvedSnap.exists()){
+  const p=await get(ref(db, `pending/${id}`));
+  const s2=await get(ref(db, `stage2/${id}`));
+  if(p.exists() && (!p.val().orgSlug || p.val().orgSlug===currentOrgSlug))
+   document.getElementById("verifyMsg").innerText=`⏳ Pending approval in ${currentOrgName}.`;
+  else if(s2.exists() && (!s2.val().orgSlug || s2.val().orgSlug===currentOrgSlug))
+   document.getElementById("verifyMsg").innerText=`⏳ Waiting final approval in ${currentOrgName}.`;
+  else
+   document.getElementById("verifyMsg").innerText=`❌ ID not found in ${currentOrgName}. Select correct org or register.`;
+  return;
+ }
+
+ const approvedVal=approvedSnap.val();
+ if(approvedVal.orgSlug && approvedVal.orgSlug!==currentOrgSlug){
+  document.getElementById("verifyMsg").innerText=`❌ This ID belongs to '${approvedVal.org}' not '${currentOrgName}'. Select correct organization.`;
+  return;
+ }
+
+ currentVoter=approvedVal;
+ document.getElementById("loginBox").classList.add("hidden");
+ document.getElementById("voteBox").classList.remove("hidden");
+ document.getElementById("welcomeVoter").innerText=`Welcome ${currentVoter.name} (ID: ${currentVoter.id})`;
+ document.getElementById("voterStatus").innerText=`Verified: ${currentVoter.name} - ${currentOrgName}`;
+ document.getElementById("voteOrg").innerText=currentOrgName;
+ document.getElementById("electionTitle").innerText=`${currentOrgName} - Election 2026`;
+ loadBallot();
+};
+
 function loadBallot(){
-  onValue(ref(db,'candidates'), snap=>{
-    const data=snap.val()||{};
-    const posts={};
-    Object.values(data).forEach(c=>{ if(!posts[c.postId]) posts[c.postId]={name:c.postName, candidates:[]}; posts[c.postId].candidates.push(c); });
-    let html="";
-    if(Object.keys(posts).length===0){ html="<p>No candidates added yet. Contact Admin.</p>"; }
-    Object.entries(posts).forEach(([postId, post])=>{
-      html+=`<div style="margin:20px 0;border:2px solid #0f2a5a;border-radius:10px;padding:15px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - Select 1</h3>`;
-      post.candidates.forEach(c=>{
-        html+=`<div class="candidate" onclick="selectCandidate('${postId}','${c.id}',this)"><img src="${c.photo}" style="width:60px;height:60px;border-radius:50%"><div><b>${c.name} - ${c.party}</b><br><small>${c.manifesto}</small></div><span class="check">✓</span></div>`;
-      });
-      html+=`</div>`;
-    });
-    document.getElementById('ballotPosts').innerHTML=html;
-  }, {onlyOnce:true});
+ onValue(ref(db, "candidates"), (snap)=>{
+  const all=snap.val()||{};
+  // filter candidates for my org only
+  const data=Object.fromEntries(Object.entries(all).filter(([k,v])=>!v.orgSlug || v.orgSlug===currentOrgSlug));
+  const posts={};
+  Object.values(data).forEach(c=>{
+   if(!posts[c.postId]) posts[c.postId]={name:c.postName, candidates:[]};
+   posts[c.postId].candidates.push(c);
+  });
+  let html="";
+  if(Object.keys(posts).length===0){ html=`<p>No candidates added yet for <b>${currentOrgName}</b>. Contact Admin.</p>`; }
+  Object.entries(posts).forEach(([postId, post])=>{
+   html+=`<div style="margin:20px 0;border:2px solid #0f2a5a;border-radius:10px;padding:15px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - Select 1</h3>`;
+   post.candidates.forEach(c=>{
+    html+=`<div class="candidate" onclick="selectCandidate('${postId}','${c.id}',this)"><img src="${c.photo}" style="width:60px;height:60px;border-radius:50%"><div><b>${c.name} - ${c.party}</b><br><small>${c.manifesto||''}</small></div><span class="check">✓ Selected</span></div>`;
+   });
+   html+=`</div>`;
+  });
+  document.getElementById("ballotPosts").innerHTML=html;
+ }, {onlyOnce:true});
 }
 
 window.selectCandidate=function(postId,candId,el){
-  const parent=el.parentElement;
-  parent.querySelectorAll('.candidate').forEach(c=>c.classList.remove('selected'));
-  el.classList.add('selected');
-  selectedVotes[postId]=candId;
-}
+ const parent=el.parentElement;
+ parent.querySelectorAll(".candidate").forEach(c=>c.classList.remove("selected"));
+ el.classList.add("selected");
+ selectedVotes[postId]=candId;
+};
 
-window.submitVote=async function(){
-  if(Object.keys(selectedVotes).length===0){ alert("Select at least one candidate"); return; }
-  if(!confirm(`Confirm votes for ${Object.keys(selectedVotes).length} post(s)? Cannot change!`)) return;
-  for(let postId in selectedVotes){
-    const voteId=Date.now()+"_"+postId+"_"+Math.floor(Math.random()*1000);
-    await set(ref(db,`votes/${voteId}`),{candidateId:selectedVotes[postId], postId:postId, voterIdHash:btoa(currentVoter.id).substring(0,10), timestamp:new Date().toLocaleString()});
-  }
-  await set(ref(db,`voters/${currentVoter.id}`),{id:currentVoter.id, name:currentVoter.name, votedAt:new Date().toLocaleString()});
-  alert("✅ Votes submitted to cloud! Thank you.");
-  location.reload();
-}
+window.submitVote = async function(){
+ if(!navigator.onLine){ alert("🔴 No Internet!"); return; }
+ if(Object.keys(selectedVotes).length===0){ alert("Select at least one candidate"); return; }
+ if(!confirm(`Confirm votes for ${Object.keys(selectedVotes).length} post(s) in ${currentOrgName}? Cannot change!`)) return;
+
+ for(let postId in selectedVotes){
+  const voteId=Date.now()+"_"+postId+"_"+Math.floor(Math.random()*1000);
+  await set(ref(db, `votes/${voteId}`), {
+   candidateId: selectedVotes[postId],
+   postId: postId,
+   org: currentOrgName,
+   orgSlug: currentOrgSlug,
+   voterIdHash: btoa(currentVoter.id).substring(0,10),
+   voterId: currentVoter.id,
+   voterName: currentVoter.name,
+   timestamp: new Date().toLocaleString()
+  });
+ }
+ await set(ref(db, `voters/${currentVoter.id}`), {
+  id: currentVoter.id,
+  name: currentVoter.name,
+  org: currentOrgName,
+  orgSlug: currentOrgSlug,
+  votedAt: new Date().toLocaleString()
+ });
+ await set(ref(db, `audit/${Date.now()}`), {
+  user: `VOTER-${currentVoter.id}`,
+  org: currentOrgName,
+  orgSlug: currentOrgSlug,
+  action: `VOTED - ${currentVoter.name} in ${currentOrgName} for ${Object.keys(selectedVotes).length} posts`,
+  time: new Date().toLocaleString()
+ });
+ alert(`✅ Votes submitted to ${currentOrgName} cloud! Thank you.`);
+ location.reload();
+};
+
+loadOrgs();
 </script>
-<style>.hidden{display:none}.candidate{border:1px solid #ddd;padding:10px;margin:8px 0;border-radius:8px;display:flex;gap:10px;align-items:center;cursor:pointer}.candidate.selected{border:2px solid #27ae60;background:#e8f5e9}.check{display:none}.candidate.selected.check{display:block;color:#27ae60;font-weight:bold}</style>
 </body>
 </html>
