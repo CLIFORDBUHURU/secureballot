@@ -1,193 +1,222 @@
-<!DOCTYPE html>
-<html><head><script>
-// ONLINE ONLY ENFORCEMENT
+<!doctype html>
+<html>
+<head>
+<script>
 function checkOnline(){
-  if(!navigator.onLine){
-    document.body.innerHTML = `<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif">
-    <div><h1>🔴 No Internet Connection</h1><h3>SecureBallot Works Online Only</h3><p>Please connect to WiFi or Data to vote, register or view results.</p><p style="margin-top:20px">This prevents double voting and fraud.</p><button onclick="location.reload()" style="padding:12px 20px;border-radius:8px;border:none;margin-top:20px;font-weight:bold;cursor:pointer">🔄 Retry When Online</button></div></div>`;
-    return false;
-  }
-  return true;
+ if(!navigator.onLine){
+  document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>🔴 No Internet - Cloud Only</h1><p>Connect to login</p><button onclick="location.reload()" style="padding:12px 20px;border-radius:8px;border:none;margin-top:20px;font-weight:bold">Retry</button></div></div>`;
+  return false;
+ } return true;
 }
-window.addEventListener('load', checkOnline);
-window.addEventListener('offline', checkOnline);
-window.addEventListener('online', ()=> location.reload());
-setInterval(checkOnline, 3000);
-</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin Login - Cloud</title><link rel="stylesheet" href="style.css"></head>
+window.addEventListener("load", checkOnline);
+window.addEventListener("offline", checkOnline);
+window.addEventListener("online", ()=>location.reload());
+setInterval(checkOnline,3000);
+</script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin Login - Multi-Org Cloud</title>
+<link rel="stylesheet" href="style.css" />
+<style>.hidden{display:none}.note{font-size:13px;color:#666;margin-top:10px} select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #ccc}</style>
+</head>
 <body>
-<div class="header"><h2>🔒 SecureBallot - Admin Login (CLOUD)</h2></div>
+<div class="header"><h2>🔒 SecureBallot - Admin Login (MULTI-ORG CLOUD)</h2></div>
 <div class="container">
-  <div class="card" id="loginBox">
-    <h1>Admin Authentication</h1>
-    <p>Organization: <b id="orgDisplay">Not Setup</b></p>
-    <input type="text" id="adminUser" placeholder="Username" autocomplete="off">
-    <input type="password" id="adminPass" placeholder="Password" autocomplete="new-password">
-    <button onclick="adminLogin()" class="vote-btn">Login</button>
-    <p id="loginMsg" class="note"></p>
-    <div style="text-align:center;margin-top:15px">
-      <a href="#" onclick="showForgot()" style="color:#0f2a5a">Forgot Password?</a> |
-      <a href="setup.html">First Time? Setup System</a> |
-      <a href="register.html">Voter Registration</a>
-    </div>
-  </div>
+<div class="card" id="loginBox">
+<h1>Admin Authentication</h1>
+<p>Select Organization:</p>
+<select id="orgSelect"><option value="">Loading organizations from cloud...</option></select>
+<p style="font-size:12px;color:#666">Organization: <b id="orgDisplay">Loading...</b></p>
 
-  <div class="card hidden" id="changePassBox" style="border:2px solid #f39c12">
-    <h1>🔑 Must Change Password</h1>
-    <p>For security, you must change your initial password before continuing.</p>
-    <input type="password" id="newPass" placeholder="New Password (min 8 chars)" autocomplete="new-password">
-    <input type="password" id="newPass2" placeholder="Confirm New Password" autocomplete="new-password">
-    <button onclick="changeInitialPassword()" class="vote-btn">Change Password & Continue →</button>
-    <p id="changeMsg"></p>
-  </div>
+<input type="text" id="adminUser" placeholder="Username" autocomplete="off" />
+<input type="password" id="adminPass" placeholder="Password" autocomplete="new-password" />
+<button onclick="adminLogin()" class="vote-btn">Login to Organization →</button>
+<p id="loginMsg" class="note"></p>
+<div style="text-align:center;margin-top:15px">
+<a href="#" onclick="showForgot()" style="color:#0f2a5a">Forgot Password?</a> |
+<a href="setup.html">First Time? Setup New Organization</a> |
+<a href="register.html">Voter Registration</a>
+</div>
+</div>
 
-  <div class="card hidden" id="forgotBox">
-    <h1>Reset Password</h1>
-    <p>Enter your username, we will send OTP to your registered phone/email (Demo: OTP shown on screen)</p>
-    <input type="text" id="forgotUser" placeholder="Enter Your Username" autocomplete="off">
-    <button onclick="sendOTP()" class="btn-secondary" style="width:100%">Send OTP</button>
-    <div id="otpSection" class="hidden">
-      <p style="background:#fff3cd;padding:10px;border-radius:6px">DEMO OTP: <b id="demoOTP"></b> (In real system sent via SMS/Email)</p>
-      <input type="text" id="otpInput" placeholder="Enter OTP" autocomplete="off">
-      <input type="password" id="resetPass" placeholder="New Password" autocomplete="new-password">
-      <button onclick="resetWithOTP()" class="vote-btn">Reset Password</button>
-    </div>
-    <p id="forgotMsg"></p>
-    <a href="#" onclick="showLogin()">← Back to Login</a>
-  </div>
+<div class="card hidden" id="changePassBox" style="border:2px solid #f39c12">
+<h1>🔑 Must Change Password</h1>
+<p>Change initial password for <b id="changeOrg"></b></p>
+<input type="password" id="newPass" placeholder="New Password (min 8)" autocomplete="new-password" />
+<input type="password" id="newPass2" placeholder="Confirm New Password" autocomplete="new-password" />
+<button onclick="changeInitialPassword()" class="vote-btn">Change Password & Continue →</button>
+<p id="changeMsg"></p>
+</div>
+
+<div class="card hidden" id="forgotBox">
+<h1>Reset Password</h1>
+<p>Enter username + select org</p>
+<select id="forgotOrgSelect"></select>
+<input type="text" id="forgotUser" placeholder="Enter Your Username" autocomplete="off" />
+<button onclick="sendOTP()" class="btn-secondary" style="width:100%">Send OTP</button>
+<div id="otpSection" class="hidden">
+<p style="background:#fff3cd;padding:10px;border-radius:6px">DEMO OTP: <b id="demoOTP"></b> (In real SMS/Email)</p>
+<input type="text" id="otpInput" placeholder="Enter OTP" autocomplete="off" />
+<input type="password" id="resetPass" placeholder="New Password" autocomplete="new-password" />
+<button onclick="resetWithOTP()" class="vote-btn">Reset Password</button>
+</div>
+<p id="forgotMsg"></p>
+<a href="#" onclick="showLogin()">← Back to Login</a>
+</div>
 </div>
 
 <script type="module">
 import { db, ref, get, set, update } from "./firebase-config.js";
 
-let tempUser = null;
-let tempUserKey = null;
-let generatedOTP = null;
+let tempUser=null; let tempUserKey=null; let generatedOTP=null;
+let allOrgs={};
+
+function slugify(name){ return name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
+function isSimilarOrg(a,b){ if(!a||!b) return false; a=a.toLowerCase().trim(); b=b.toLowerCase().trim(); if(a===b) return true; if(a.includes(b)||b.includes(a)) return true; return a.replace(/\s+/g,'')===b.replace(/\s+/g,''); }
 
 function clearAllInputs(){
-  document.getElementById('adminUser').value = "";
-  document.getElementById('adminPass').value = "";
-  const np1 = document.getElementById('newPass'); if(np1) np1.value = "";
-  const np2 = document.getElementById('newPass2'); if(np2) np2.value = "";
-  document.getElementById('forgotUser').value = "";
-  document.getElementById('otpInput').value = "";
-  document.getElementById('resetPass').value = "";
-  document.getElementById('demoOTP').innerText = "";
-  document.getElementById('loginMsg').innerText = "";
-  document.getElementById('changeMsg').innerText = "";
-  document.getElementById('forgotMsg').innerText = "";
-  document.getElementById('otpSection').classList.add('hidden');
+ document.getElementById("adminUser").value=""; document.getElementById("adminPass").value="";
+ const np1=document.getElementById("newPass"); if(np1) np1.value=""; const np2=document.getElementById("newPass2"); if(np2) np2.value="";
+ document.getElementById("forgotUser").value=""; document.getElementById("otpInput").value=""; document.getElementById("resetPass").value="";
+ document.getElementById("demoOTP").innerText=""; document.getElementById("loginMsg").innerText=""; document.getElementById("changeMsg").innerText=""; document.getElementById("forgotMsg").innerText="";
+ document.getElementById("otpSection").classList.add("hidden");
 }
+window.showLogin=function(){ clearAllInputs(); document.getElementById("loginBox").classList.remove("hidden"); document.getElementById("forgotBox").classList.add("hidden"); document.getElementById("changePassBox").classList.add("hidden"); };
+window.showForgot=function(){ clearAllInputs(); document.getElementById("loginBox").classList.add("hidden"); document.getElementById("forgotBox").classList.remove("hidden"); };
 
-window.showLogin = function(){
-  clearAllInputs();
-  document.getElementById('loginBox').classList.remove('hidden');
-  document.getElementById('forgotBox').classList.add('hidden');
-  document.getElementById('changePassBox').classList.add('hidden');
-}
-window.showForgot = function(){
-  clearAllInputs();
-  document.getElementById('loginBox').classList.add('hidden');
-  document.getElementById('forgotBox').classList.remove('hidden');
+async function loadOrgs(){
+ const orgsSnap=await get(ref(db, "orgs"));
+ const oldOrgSnap=await get(ref(db, "org"));
+ allOrgs = orgsSnap.val()||{};
+ // backward compatibility: add old single org if exists
+ if(oldOrgSnap.exists() &&!allOrgs[slugify(oldOrgSnap.val().name)]){
+  const name=oldOrgSnap.val().name;
+  allOrgs[slugify(name)]={name, slug:slugify(name), superAdmin:"cliford_admin"};
+ }
+
+ const orgSelect=document.getElementById("orgSelect");
+ const forgotSelect=document.getElementById("forgotOrgSelect");
+ if(Object.keys(allOrgs).length===0){
+  orgSelect.innerHTML='<option value="">No organization setup yet - Go to Setup</option>';
+  document.getElementById("orgDisplay").innerText="Not Setup Yet";
+  return;
+ }
+
+ let options='<option value="">-- Select Your Organization --</option>';
+ Object.values(allOrgs).forEach(o=>{
+  options+=`<option value="${o.slug}">${o.name}</option>`;
+ });
+ orgSelect.innerHTML=options;
+ forgotSelect.innerHTML=options;
+
+ // auto-select from URL?org=slug
+ const urlParams=new URLSearchParams(window.location.search);
+ const orgParam=urlParams.get("org");
+ if(orgParam && allOrgs[orgParam]){
+  orgSelect.value=orgParam;
+  document.getElementById("orgDisplay").innerText=allOrgs[orgParam].name;
+ }
+
+ // Check for single org display fallback
+ if(Object.keys(allOrgs).length===1){
+  const onlyOrg=Object.values(allOrgs)[0];
+  orgSelect.value=onlyOrg.slug;
+  document.getElementById("orgDisplay").innerText=onlyOrg.name;
+ } else if(orgParam){
+  document.getElementById("orgDisplay").innerText=allOrgs[orgParam]?.name||"Select org above";
+ } else {
+  document.getElementById("orgDisplay").innerText=`${Object.keys(allOrgs).length} organizations active nationwide`;
+ }
+
+ orgSelect.addEventListener("change", (e)=>{
+  const slug=e.target.value;
+  document.getElementById("orgDisplay").innerText= slug? (allOrgs[slug]?.name||slug) : "Select org";
+ });
 }
 
 window.adminLogin = async function(){
-  const user = document.getElementById('adminUser').value.trim();
-  const pass = document.getElementById('adminPass').value;
-  if(!user || !pass){ document.getElementById('loginMsg').innerText="Fill all"; return; }
-  
-  document.getElementById('loginMsg').innerText="Checking cloud...";
-  
-  const snap = await get(ref(db, `admins/${user}`));
-  if(!snap.exists()){
-    document.getElementById('loginMsg').innerText = "❌ User not found in cloud";
-    logAudit(user, "FAILED LOGIN - User not found");
-    document.getElementById('adminPass').value = "";
-    return;
+ const orgSlugVal=document.getElementById("orgSelect").value.trim();
+ const user=document.getElementById("adminUser").value.trim();
+ const pass=document.getElementById("adminPass").value;
+ if(!orgSlugVal ||!user ||!pass){
+  document.getElementById("loginMsg").innerText="❌ Select Organization + Fill username & password"; return;
+ }
+ document.getElementById("loginMsg").innerText="Checking cloud for "+allOrgs[orgSlugVal]?.name+"...";
+
+ const snap=await get(ref(db, `admins/${user}`));
+ if(!snap.exists()){
+  document.getElementById("loginMsg").innerText="❌ User not found in cloud"; logAudit(user, "FAILED LOGIN - User not found", orgSlugVal); return;
+ }
+ const admin=snap.val();
+
+ // MULTI-ORG CHECK: admin must belong to selected org (or similar org name)
+ const selectedOrgName=allOrgs[orgSlugVal]?.name||"";
+ if(admin.org && admin.orgSlug){
+  if(admin.orgSlug!==orgSlugVal &&!isSimilarOrg(admin.org, selectedOrgName)){
+   document.getElementById("loginMsg").innerText=`❌ This user belongs to '${admin.org}' not '${selectedOrgName}'. Select correct organization.`;
+   return;
   }
-  const admin = snap.val();
-  if(!admin.is_active){
-    document.getElementById('loginMsg').innerText = "❌ Account disabled by Super Admin";
-    return;
-  }
-  if(atob(admin.password) !== pass){
-    document.getElementById('loginMsg').innerText = "❌ Wrong password";
-    logAudit(user, "FAILED LOGIN - Wrong password");
-    document.getElementById('adminPass').value = "";
-    return;
-  }
+ }
+ if(!admin.is_active){ document.getElementById("loginMsg").innerText="❌ Account disabled"; return; }
+ if(atob(admin.password)!==pass){ document.getElementById("loginMsg").innerText="❌ Wrong password"; logAudit(user, "FAILED LOGIN - Wrong password", orgSlugVal); document.getElementById("adminPass").value=""; return; }
 
-  if(admin.must_change_password){
-    tempUser = admin;
-    tempUserKey = user;
-    clearAllInputs();
-    document.getElementById('loginBox').classList.add('hidden');
-    document.getElementById('changePassBox').classList.remove('hidden');
-    return;
-  }
+ if(admin.must_change_password){
+  tempUser=admin; tempUserKey=user;
+  document.getElementById("changeOrg").innerText=admin.org||selectedOrgName;
+  clearAllInputs(); document.getElementById("loginBox").classList.add("hidden"); document.getElementById("changePassBox").classList.remove("hidden"); return;
+ }
 
-  // SUCCESS
-  localStorage.setItem('sb_is_admin', 'true');
-  localStorage.setItem('sb_admin_role', admin.role);
-  localStorage.setItem('sb_admin_user', admin.username);
-  logAudit(admin.username, `LOGIN SUCCESS - Role ${admin.role} from cloud`);
-  clearAllInputs();
-  window.location.href = "admin.html";
-}
+ // SUCCESS - Save org context for nationwide sales
+ localStorage.setItem("sb_is_admin","true");
+ localStorage.setItem("sb_admin_role",admin.role);
+ localStorage.setItem("sb_admin_user",admin.username);
+ localStorage.setItem("sb_admin_org",admin.org||selectedOrgName);
+ localStorage.setItem("sb_admin_orgSlug",admin.orgSlug||orgSlugVal);
+ logAudit(admin.username, `LOGIN SUCCESS - Role ${admin.role} for org ${admin.org||selectedOrgName}`, orgSlugVal);
+ clearAllInputs();
+ window.location.href="admin.html";
+};
 
-window.changeInitialPassword = async function(){
-  const p1 = document.getElementById('newPass').value;
-  const p2 = document.getElementById('newPass2').value;
-  if(p1.length<8 || p1!==p2){ document.getElementById('changeMsg').innerText = "❌ Password min 8 chars and must match"; return; }
-  
-  await update(ref(db, `admins/${tempUserKey}`), {password: btoa(p1), must_change_password: false});
-  logAudit(tempUser.username, "PASSWORD CHANGED ON FIRST LOGIN - CLOUD");
-  clearAllInputs();
-  localStorage.setItem('sb_is_admin', 'true');
-  localStorage.setItem('sb_admin_role', tempUser.role);
-  localStorage.setItem('sb_admin_user', tempUser.username);
-  window.location.href = "admin.html";
-}
+window.changeInitialPassword=async function(){
+ const p1=document.getElementById("newPass").value; const p2=document.getElementById("newPass2").value;
+ if(p1.length<8||p1!==p2){ document.getElementById("changeMsg").innerText="❌ Password min 8 and must match"; return; }
+ await update(ref(db, `admins/${tempUserKey}`), {password:btoa(p1), must_change_password:false});
+ logAudit(tempUser.username, "PASSWORD CHANGED ON FIRST LOGIN - CLOUD", tempUser.orgSlug);
+ localStorage.setItem("sb_is_admin","true"); localStorage.setItem("sb_admin_role",tempUser.role); localStorage.setItem("sb_admin_user",tempUser.username); localStorage.setItem("sb_admin_org",tempUser.org); localStorage.setItem("sb_admin_orgSlug",tempUser.orgSlug);
+ clearAllInputs(); window.location.href="admin.html";
+};
 
-window.sendOTP = async function(){
-  const user = document.getElementById('forgotUser').value.trim();
-  const snap = await get(ref(db, `admins/${user}`));
-  if(!snap.exists()){ document.getElementById('forgotMsg').innerText = "❌ Username not found in cloud"; return; }
-  const admin = snap.val();
-  generatedOTP = Math.floor(100000 + Math.random()*900000).toString();
-  tempUser = admin;
-  tempUserKey = user;
-  document.getElementById('demoOTP').innerText = generatedOTP;
-  document.getElementById('otpSection').classList.remove('hidden');
-  document.getElementById('forgotMsg').innerText = `✅ OTP sent to ${admin.email} / ${admin.phone} (Demo shown above)`;
-  logAudit(user, `OTP GENERATED FOR PASSWORD RESET - OTP: ${generatedOTP}`);
-}
+window.sendOTP=async function(){
+ const user=document.getElementById("forgotUser").value.trim();
+ const orgSlugVal=document.getElementById("forgotOrgSelect").value;
+ const snap=await get(ref(db, `admins/${user}`));
+ if(!snap.exists()){ document.getElementById("forgotMsg").innerText="❌ Username not found"; return; }
+ const admin=snap.val();
+ if(orgSlugVal && admin.orgSlug && admin.orgSlug!==orgSlugVal){ document.getElementById("forgotMsg").innerText=`❌ User belongs to ${admin.org}, not selected org`; return; }
+ generatedOTP=Math.floor(100000+Math.random()*900000).toString();
+ tempUser=admin; tempUserKey=user;
+ document.getElementById("demoOTP").innerText=generatedOTP;
+ document.getElementById("otpSection").classList.remove("hidden");
+ document.getElementById("forgotMsg").innerText=`✅ OTP sent to ${admin.email} / ${admin.phone} (Demo above)`;
+ logAudit(user, `OTP GENERATED ${generatedOTP} for ${admin.org}`, orgSlugVal);
+};
 
-window.resetWithOTP = async function(){
-  const otp = document.getElementById('otpInput').value.trim();
-  const newPass = document.getElementById('resetPass').value;
-  if(otp !== generatedOTP){ document.getElementById('forgotMsg').innerText = "❌ Wrong OTP"; return; }
-  if(newPass.length<8){ document.getElementById('forgotMsg').innerText = "❌ Password min 8 chars"; return; }
-  
-  await update(ref(db, `admins/${tempUserKey}`), {password: btoa(newPass), must_change_password: false});
-  logAudit(tempUser.username, "PASSWORD RESET VIA OTP - SUCCESS - CLOUD");
-  document.getElementById('forgotMsg').innerText = "✅ Password reset in cloud! Go to login";
-  setTimeout(()=>{ clearAllInputs(); showLogin(); }, 2000);
-}
+window.resetWithOTP=async function(){
+ const otp=document.getElementById("otpInput").value.trim(); const newPass=document.getElementById("resetPass").value;
+ if(otp!==generatedOTP){ document.getElementById("forgotMsg").innerText="❌ Wrong OTP"; return; }
+ if(newPass.length<8){ document.getElementById("forgotMsg").innerText="❌ Password min 8"; return; }
+ await update(ref(db, `admins/${tempUserKey}`), {password:btoa(newPass), must_change_password:false});
+ logAudit(tempUser.username, "PASSWORD RESET VIA OTP - SUCCESS", tempUser.orgSlug);
+ document.getElementById("forgotMsg").innerText="✅ Password reset! Go to login"; setTimeout(()=>{clearAllInputs(); showLogin(); loadOrgs();},2000);
+};
 
-window.logAudit = function(user, action){
-  const id = Date.now();
-  set(ref(db, `audit/${id}`), {user: user, action, time: new Date().toLocaleString()});
-}
+window.logAudit=function(user, action, orgSlugVal){
+ const orgName = orgSlugVal? (allOrgs[orgSlugVal]?.name||orgSlugVal) : "";
+ set(ref(db, `audit/${Date.now()}`), {user:user, action, org:orgName, orgSlug:orgSlugVal||"", time:new Date().toLocaleString()});
+};
 
-window.onload = function(){
-  clearAllInputs();
-  get(ref(db, 'org')).then(snap=>{
-    document.getElementById('orgDisplay').innerText = snap.val()?.name || 'Not Setup Yet - Go to Setup';
-  });
-}
-window.onpageshow = function(event){ if(event.persisted){ clearAllInputs(); } }
+window.onload=function(){ clearAllInputs(); loadOrgs(); };
+window.onpageshow=function(event){ if(event.persisted){ clearAllInputs(); } };
 </script>
-<style>.hidden{display:none}.note{font-size:13px;color:#666;margin-top:10px}</style>
 </body>
 </html>
