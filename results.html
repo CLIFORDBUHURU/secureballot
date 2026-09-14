@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Results - SecureBallot Cloud</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="header"><h2>Live Results - Cloud</h2><a href="index.html" style="color:white">← Back to Vote</a></div>
+<div class="container">
+  <div class="card">
+    <h1>Live Count - Transparent (Cloud)</h1>
+    <div id="resultsContainer">Loading from cloud...</div>
+    <p id="resultTotal" style="margin-top:15px;font-weight:bold"></p>
+    <p style="font-size:12px;color:#666">Updates instantly when new vote is cast on any device</p>
+    <button onclick="clearResults()" style="background:#c0392b;color:white;margin-top:15px" id="clearBtn" class="hidden">🗑️ Clear All Votes (Super Admin)</button>
+  </div>
+</div>
+
+<script type="module">
+import { db, ref, get, remove, onValue } from "./firebase-config.js";
+
+let isSuper = localStorage.getItem('sb_admin_role')==='superadmin';
+if(isSuper) document.getElementById('clearBtn').classList.remove('hidden');
+
+onValue(ref(db,'votes'), async snap=>{
+  const votes = snap.val()||{};
+  const total = Object.keys(votes).length;
+  
+  const candSnap = await get(ref(db,'candidates'));
+  const postsSnap = await get(ref(db,'posts'));
+  const candData = candSnap.val()||{};
+  const postsData = postsSnap.val()||{};
+
+  if(Object.keys(candData).length===0){
+    document.getElementById('resultsContainer').innerHTML = `<div style="text-align:center;padding:30px"><h3 style="color:#c0392b">⚠️ No Candidates Created Yet</h3><p>Admin has not added any Posts or Candidates in cloud.</p><p>Go to Admin Panel → Posts & Candidates tab</p></div>`;
+    document.getElementById('resultTotal').innerText = `Total Votes Cast: ${total} (but no candidates to map)`;
+    return;
+  }
+
+  // Group by post
+  const byPost = {};
+  Object.values(candData).forEach(c=>{
+    if(!byPost[c.postId]) byPost[c.postId] = {name: c.postName, cands:{}};
+    byPost[c.postId].cands[c.id] = {...c, count:0};
+  });
+  Object.values(votes).forEach(v=>{
+    if(byPost[v.postId] && byPost[v.postId].cands[v.candidateId]) byPost[v.postId].cands[v.candidateId].count++;
+  });
+
+  let html = "";
+  Object.values(byPost).forEach(post=>{
+    const postTotal = Object.values(post.cands).reduce((s,x)=>s+x.count,0);
+    html+= `<div style="margin:20px 0;padding:15px;border:2px solid #0f2a5a;border-radius:10px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - ${postTotal} votes</h3>`;
+    const sorted = Object.values(post.cands).sort((a,b)=>b.count-a.count);
+    sorted.forEach((c,i)=>{
+      const per = postTotal?Math.round(c.count/postTotal*100):0;
+      const isWinner = i===0 && c.count>0;
+      html+= `<div style="margin:10px 0;${isWinner?'background:#e8f5e9;padding:8px;border-radius:6px;border:1px solid #27ae60':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;gap:10px;align-items:center"><img src="${c.photo}" width="40" height="40" style="border-radius:50%"><b>${c.name} ${isWinner?'👑 WINNER':''}</b></div><span>${c.count} (${per}%)</span></div>
+        <div style="background:#eee;height:18px;border-radius:10px;overflow:hidden;margin-top:6px"><div style="background:${isWinner?'#27ae60':'#3498db'};width:${per}%;height:100%;transition:width 0.5s"></div></div>
+        <small style="color:#666">${c.party} - ${c.manifesto}</small>
+      </div>`;
+    });
+    html+= `</div>`;
+  });
+
+  document.getElementById('resultsContainer').innerHTML = html || "No data";
+  document.getElementById('resultTotal').innerText = `Total Vote Records in Cloud (ballot-da7cb): ${total}`;
+});
+
+window.clearResults = async function(){
+  if(!confirm("Clear ALL votes? This cannot be undone!")) return;
+  await remove(ref(db,'votes'));
+  await remove(ref(db,'voters'));
+  alert("Votes cleared from cloud!");
+}
+</script>
+</body>
+</html>

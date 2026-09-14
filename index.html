@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SecureBallot - Vote Cloud</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="header"><h2>🔒 SecureBallot</h2><span id="voterStatus">Approved Voters Only - Cloud</span></div>
+<div class="container" id="loginBox">
+  <div class="card">
+    <h1>Voter Login</h1>
+    <p>Only approved voters can vote. Enter ID.</p>
+    <input type="text" id="idNumber" placeholder="Enter Approved ID Number">
+    <button onclick="verifyVoterMode2()" class="vote-btn">Verify & Proceed to Ballot</button>
+    <p id="verifyMsg" class="note"></p>
+    <p class="note"><a href="register.html">Register Here</a> | <a href="results.html">Live Results</a></p>
+  </div>
+</div>
+<div class="container hidden" id="voteBox">
+  <h1 id="electionTitle">General Election 2026</h1>
+  <p id="welcomeVoter"></p>
+  <div id="ballotPosts"></div>
+  <button class="vote-btn" onclick="submitVote()">Submit All Votes →</button>
+</div>
+
+<script type="module">
+import { db, ref, get, set, onValue } from "./firebase-config.js";
+let currentVoter=null;
+let selectedVotes={};
+
+window.verifyVoterMode2=async function(){
+  const id=document.getElementById('idNumber').value.trim();
+  if(!id){document.getElementById('verifyMsg').innerText="Enter ID";return;}
+  document.getElementById('verifyMsg').innerText="Checking cloud...";
+  const votedSnap=await get(ref(db,`voters/${id}`));
+  if(votedSnap.exists()){document.getElementById('verifyMsg').innerText="❌ Already voted! One vote per ID.";return;}
+  const approvedSnap=await get(ref(db,`approved/${id}`));
+  if(!approvedSnap.exists()){
+    const p=await get(ref(db,`pending/${id}`)); const s2=await get(ref(db,`stage2/${id}`));
+    if(p.exists()) document.getElementById('verifyMsg').innerText="⏳ Pending Admin1 approval.";
+    else if(s2.exists()) document.getElementById('verifyMsg').innerText="⏳ Waiting Admin2 final approval.";
+    else document.getElementById('verifyMsg').innerText="❌ ID not found. Register first.";
+    return;
+  }
+  currentVoter=approvedSnap.val();
+  document.getElementById('loginBox').classList.add('hidden');
+  document.getElementById('voteBox').classList.remove('hidden');
+  document.getElementById('welcomeVoter').innerText=`Welcome ${currentVoter.name} (ID: ${currentVoter.id})`;
+  document.getElementById('voterStatus').innerText=`Verified: ${currentVoter.name}`;
+  loadBallot();
+}
+
+function loadBallot(){
+  onValue(ref(db,'candidates'), snap=>{
+    const data=snap.val()||{};
+    const posts={};
+    Object.values(data).forEach(c=>{ if(!posts[c.postId]) posts[c.postId]={name:c.postName, candidates:[]}; posts[c.postId].candidates.push(c); });
+    let html="";
+    if(Object.keys(posts).length===0){ html="<p>No candidates added yet. Contact Admin.</p>"; }
+    Object.entries(posts).forEach(([postId, post])=>{
+      html+=`<div style="margin:20px 0;border:2px solid #0f2a5a;border-radius:10px;padding:15px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - Select 1</h3>`;
+      post.candidates.forEach(c=>{
+        html+=`<div class="candidate" onclick="selectCandidate('${postId}','${c.id}',this)"><img src="${c.photo}" style="width:60px;height:60px;border-radius:50%"><div><b>${c.name} - ${c.party}</b><br><small>${c.manifesto}</small></div><span class="check">✓</span></div>`;
+      });
+      html+=`</div>`;
+    });
+    document.getElementById('ballotPosts').innerHTML=html;
+  }, {onlyOnce:true});
+}
+
+window.selectCandidate=function(postId,candId,el){
+  const parent=el.parentElement;
+  parent.querySelectorAll('.candidate').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedVotes[postId]=candId;
+}
+
+window.submitVote=async function(){
+  if(Object.keys(selectedVotes).length===0){ alert("Select at least one candidate"); return; }
+  if(!confirm(`Confirm votes for ${Object.keys(selectedVotes).length} post(s)? Cannot change!`)) return;
+  for(let postId in selectedVotes){
+    const voteId=Date.now()+"_"+postId+"_"+Math.floor(Math.random()*1000);
+    await set(ref(db,`votes/${voteId}`),{candidateId:selectedVotes[postId], postId:postId, voterIdHash:btoa(currentVoter.id).substring(0,10), timestamp:new Date().toLocaleString()});
+  }
+  await set(ref(db,`voters/${currentVoter.id}`),{id:currentVoter.id, name:currentVoter.name, votedAt:new Date().toLocaleString()});
+  alert("✅ Votes submitted to cloud! Thank you.");
+  location.reload();
+}
+</script>
+<style>.hidden{display:none}.candidate{border:1px solid #ddd;padding:10px;margin:8px 0;border-radius:8px;display:flex;gap:10px;align-items:center;cursor:pointer}.candidate.selected{border:2px solid #27ae60;background:#e8f5e9}.check{display:none}.candidate.selected.check{display:block;color:#27ae60;font-weight:bold}</style>
+</body>
+</html>

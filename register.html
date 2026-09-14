@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Register - SecureBallot Cloud</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="header"><h2>🔒 SecureBallot</h2><span>Mode 2 - Cloud Approval Required</span></div>
+<div class="container">
+  <div class="card">
+    <h1>Voter Registration (Cloud)</h1>
+    <p>Register 3 days before election. Admin must approve you from any device before you can vote.</p>
+    <input type="text" id="regName" placeholder="Full Name as per ID">
+    <input type="text" id="regId" placeholder="ID Number / Admission No">
+    <input type="text" id="regPhone" placeholder="Phone Number 07...">
+    <input type="text" id="regCourse" placeholder="Course / Department (Optional)">
+    <button onclick="registerVoter()" class="vote-btn">Submit Registration →</button>
+    <p id="regMsg" class="note"></p>
+    <div style="margin-top:15px;text-align:center">
+      <a href="index.html">Already Registered? Go to Vote</a> |
+      <a href="admin-login.html">Admin Panel</a>
+    </div>
+  </div>
+  <div class="card small">
+    <h3>Check Your Status (Live from Cloud)</h3>
+    <input type="text" id="checkId" placeholder="Enter ID to check status">
+    <button onclick="checkStatus()" class="btn-secondary">Check Status</button>
+    <p id="statusResult"></p>
+  </div>
+</div>
+
+<script type="module">
+import { db, ref, get, set } from "./firebase-config.js";
+
+window.registerVoter = async function(){
+  const name = document.getElementById('regName').value.trim();
+  const id = document.getElementById('regId').value.trim();
+  const phone = document.getElementById('regPhone').value.trim();
+  const course = document.getElementById('regCourse').value.trim();
+  const msg = document.getElementById('regMsg');
+
+  if(name.length<3 || id.length<3 || phone.length<9){
+    msg.innerText="❌ Fill Name, ID, and valid Phone";
+    return;
+  }
+
+  msg.innerText="Checking cloud...";
+
+  // Check if ID already exists anywhere in cloud
+  const checks = await Promise.all([
+    get(ref(db, `pending/${id}`)),
+    get(ref(db, `stage2/${id}`)),
+    get(ref(db, `approved/${id}`))
+  ]);
+
+  if(checks.some(s=>s.exists())){
+    msg.innerText="❌ This ID is already registered in cloud. Check status below.";
+    return;
+  }
+
+  // Save to pending in cloud - appears instantly in admin panel on any device
+  await set(ref(db, `pending/${id}`), {
+    id: id,
+    name: name,
+    phone: phone,
+    course: course || "N/A",
+    created: new Date().toLocaleString()
+  });
+
+  // Audit
+  await set(ref(db, `audit/${Date.now()}`), {
+    user: `VOTER-${id}`,
+    action: `REGISTERED - ${name} Phone:${phone}`,
+    time: new Date().toLocaleString()
+  });
+
+  msg.innerHTML = `✅ <b>Registration sent to cloud!</b><br>Your ID <b>${id}</b> is now waiting for Admin1 approval.<br>Use Check Status below to see progress.`;
+  document.getElementById('regName').value="";
+  document.getElementById('regId').value="";
+  document.getElementById('regPhone').value="";
+  document.getElementById('regCourse').value="";
+}
+
+window.checkStatus = async function(){
+  const id = document.getElementById('checkId').value.trim();
+  const result = document.getElementById('statusResult');
+  if(!id){ result.innerText="Enter ID"; return; }
+  
+  result.innerText="Checking cloud...";
+
+  const pending = await get(ref(db, `pending/${id}`));
+  const stage2 = await get(ref(db, `stage2/${id}`));
+  const approved = await get(ref(db, `approved/${id}`));
+  const voted = await get(ref(db, `voters/${id}`));
+
+  if(approved.exists()){
+    if(voted.exists()){
+      result.innerHTML = `✅ <b style="color:green">ID ${id} - APPROVED & VOTED</b><br>Name: ${approved.val().name}<br>You have already voted on ${voted.val().votedAt}`;
+    } else {
+      result.innerHTML = `✅ <b style="color:#27ae60">ID ${id} - FULLY APPROVED!</b><br>Name: ${approved.val().name}<br>You can now go to <a href="index.html">Vote Page</a> and vote!`;
+    }
+  } else if(stage2.exists()){
+    result.innerHTML = `⏳ <b style="color:#f39c12">ID ${id} - Stage 1 Approved</b><br>Waiting for Admin2 final approval. Check again in 5 mins.`;
+  } else if(pending.exists()){
+    result.innerHTML = `⏳ <b style="color:#e67e22">ID ${id} - Pending</b><br>Name: ${pending.val().name}<br>Waiting for Admin1 to approve.`;
+  } else {
+    result.innerHTML = `❌ <b style="color:#c0392b">ID ${id} - Not Found</b><br>Not registered yet. Fill form above.`;
+  }
+}
+</script>
+</body>
+</html>

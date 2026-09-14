@@ -1,0 +1,184 @@
+<!doctype html>
+<html>
+  <script>
+    // ONLINE ONLY ENFORCEMENT
+    function checkOnline() {
+      if (!navigator.onLine) {
+        document.body.innerHTML = `<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif">
+    <div><h1>🔴 No Internet Connection</h1><h3>SecureBallot Works Online Only</h3><p>Please connect to WiFi or Data to vote, register or view results.</p><p style="margin-top:20px">This prevents double voting and fraud.</p><button onclick="location.reload()" style="padding:12px 20px;border-radius:8px;border:none;margin-top:20px;font-weight:bold;cursor:pointer">🔄 Retry When Online</button></div></div>`;
+        return false;
+      }
+      return true;
+    }
+    window.addEventListener("load", checkOnline);
+    window.addEventListener("offline", checkOnline);
+    window.addEventListener("online", () => location.reload());
+    setInterval(checkOnline, 3000);
+  </script>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Setup - SecureBallot Cloud</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="header"><h2>🔒 SecureBallot - Initial Cloud Setup</h2></div>
+    <div class="container">
+      <div class="card" style="border: 2px solid #c0392b">
+        <h1>⚙️ First Time Setup - Create Super Admin (CLOUD)</h1>
+        <p style="color: #c0392b">
+          This page works ONLY ONCE in cloud. After creating Super Admin, it
+          will lock itself on all devices.
+        </p>
+        <div id="setupForm">
+          <input
+            type="text"
+            id="orgName"
+            placeholder="Organization Name (e.g. KAFU University)"
+          />
+          <input
+            type="text"
+            id="superUser"
+            placeholder="Super Admin Username (e.g. kafu_admin)"
+          />
+          <input
+            type="email"
+            id="superEmail"
+            placeholder="Super Admin Email (for password reset)"
+          />
+          <input
+            type="text"
+            id="superPhone"
+            placeholder="Super Admin Phone 07..."
+          />
+          <input
+            type="password"
+            id="superPass"
+            placeholder="Create Strong Password (Min 8 chars)"
+          />
+          <input
+            type="password"
+            id="superPass2"
+            placeholder="Confirm Password"
+          />
+          <button onclick="createSuperAdmin()" class="vote-btn">
+            Create Super Admin & Lock Setup →
+          </button>
+          <p id="setupMsg"></p>
+        </div>
+        <div id="alreadySetup" class="hidden">
+          <h2 style="color: #27ae60">✅ System Already Setup in Cloud</h2>
+          <p>
+            Super Admin exists in <b>ballot-da7cb</b>. Setup is locked for
+            security on all devices.
+          </p>
+          <p>Go to <a href="admin-login.html">Admin Login</a></p>
+          <p>Super Admin user: <b id="existingAdmin"></b></p>
+          <p>Organization: <b id="existingOrg"></b></p>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      import { db, ref, get, set } from "./firebase-config.js";
+
+      async function checkSetup() {
+        const adminsSnap = await get(ref(db, "admins"));
+        const orgSnap = await get(ref(db, "org"));
+
+        if (adminsSnap.exists()) {
+          const admins = Object.values(adminsSnap.val());
+          const superAdmin = admins.find((a) => a.role === "superadmin");
+          if (superAdmin) {
+            document.getElementById("setupForm").classList.add("hidden");
+            document.getElementById("alreadySetup").classList.remove("hidden");
+            document.getElementById("existingAdmin").innerText =
+              superAdmin.username;
+            document.getElementById("existingOrg").innerText =
+              orgSnap.val()?.name || superAdmin.org || "Unknown";
+            return true;
+          }
+        }
+        return false;
+      }
+
+      window.createSuperAdmin = async function () {
+        const org = document.getElementById("orgName").value.trim();
+        const user = document.getElementById("superUser").value.trim();
+        const email = document.getElementById("superEmail").value.trim();
+        const phone = document.getElementById("superPhone").value.trim();
+        const pass = document.getElementById("superPass").value;
+        const pass2 = document.getElementById("superPass2").value;
+
+        if (
+          !org ||
+          user.length < 4 ||
+          !email.includes("@") ||
+          phone.length < 9 ||
+          pass.length < 8
+        ) {
+          document.getElementById("setupMsg").innerText =
+            "❌ Fill all fields correctly. Password min 8 chars.";
+          return;
+        }
+        if (pass !== pass2) {
+          document.getElementById("setupMsg").innerText =
+            "❌ Passwords don't match";
+          return;
+        }
+
+        document.getElementById("setupMsg").innerText = "Checking cloud...";
+
+        if (await checkSetup()) {
+          alert("Super Admin already exists in cloud!");
+          return;
+        }
+
+        // Check username taken
+        const existingUser = await get(ref(db, `admins/${user}`));
+        if (existingUser.exists()) {
+          document.getElementById("setupMsg").innerText =
+            "❌ Username already taken in cloud, choose another";
+          return;
+        }
+
+        const superAdmin = {
+          username: user,
+          password: btoa(pass),
+          role: "superadmin",
+          email: email,
+          phone: phone,
+          org: org,
+          created: new Date().toLocaleString(),
+          must_change_password: false,
+          is_active: true,
+        };
+
+        // Save to cloud - this locks setup on ALL devices
+        await set(ref(db, `admins/${user}`), superAdmin);
+        await set(ref(db, `org`), {
+          name: org,
+          setupAt: new Date().toLocaleString(),
+        });
+        await set(ref(db, `audit/${Date.now()}`), {
+          user: user.toUpperCase(),
+          action: `SYSTEM SETUP COMPLETE IN CLOUD - Super Admin ${user} created for ${org}`,
+          time: new Date().toLocaleString(),
+        });
+
+        document.getElementById("setupMsg").innerHTML =
+          "✅ Super Admin Created in Cloud! Redirecting to login...";
+        setTimeout(() => {
+          window.location.href = "admin-login.html";
+        }, 2000);
+      };
+
+      checkSetup();
+    </script>
+    <style>
+      .hidden {
+        display: none;
+      }
+    </style>
+  </body>
+</html>
