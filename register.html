@@ -1,113 +1,188 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+function checkOnline(){
+ if(!navigator.onLine){
+  document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>🔴 No Internet</h1><h3>SecureBallot Works Online Only</h3><p>Connect to WiFi/Data to register.</p><button onclick="location.reload()" style="padding:12px 20px;border-radius:8px;border:none;margin-top:20px;font-weight:bold">Retry</button></div></div>`;
+  return false;
+ }
+ return true;
+}
+window.addEventListener('load', checkOnline);
+window.addEventListener('offline', checkOnline);
+window.addEventListener('online', ()=>location.reload());
+setInterval(checkOnline,3000);
+</script>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Register - SecureBallot Cloud</title>
+<title>Register - SecureBallot Multi-Org Cloud</title>
 <link rel="stylesheet" href="style.css">
+<style>select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #ccc}</style>
 </head>
 <body>
-<div class="header"><h2>🔒 SecureBallot</h2><span>Mode 2 - Cloud Approval Required</span></div>
+<div class="header"><h2>🔒 SecureBallot</h2><span id="headerOrg">Multi-Org Cloud</span></div>
 <div class="container">
-  <div class="card">
-    <h1>Voter Registration (Cloud)</h1>
-    <p>Register 3 days before election. Admin must approve you from any device before you can vote.</p>
-    <input type="text" id="regName" placeholder="Full Name as per ID">
-    <input type="text" id="regId" placeholder="ID Number / Admission No">
-    <input type="text" id="regPhone" placeholder="Phone Number 07...">
-    <input type="text" id="regCourse" placeholder="Course / Department (Optional)">
-    <button onclick="registerVoter()" class="vote-btn">Submit Registration →</button>
-    <p id="regMsg" class="note"></p>
-    <div style="margin-top:15px;text-align:center">
-      <a href="index.html">Already Registered? Go to Vote</a> |
-      <a href="admin-login.html">Admin Panel</a>
-    </div>
-  </div>
-  <div class="card small">
-    <h3>Check Your Status (Live from Cloud)</h3>
-    <input type="text" id="checkId" placeholder="Enter ID to check status">
-    <button onclick="checkStatus()" class="btn-secondary">Check Status</button>
-    <p id="statusResult"></p>
-  </div>
+<div class="card">
+<h1>Voter Registration (Cloud)</h1>
+<p>Select your Organization - You can only vote in your organization.</p>
+<select id="orgSelect"><option>Loading organizations...</option></select>
+<p style="font-size:12px">Org: <b id="orgDisplay">Select above</b></p>
+
+<input type="text" id="regName" placeholder="Full Name as per ID">
+<input type="text" id="regId" placeholder="ID Number / Admission No">
+<input type="text" id="regPhone" placeholder="Phone Number 07...">
+<input type="text" id="regCourse" placeholder="Course / Department (Optional)">
+<button onclick="registerVoter()" class="vote-btn">Submit Registration →</button>
+<p id="regMsg" class="note"></p>
+<div style="margin-top:15px;text-align:center">
+<a href="index.html">Already Registered? Go to Vote</a> |
+<a href="admin-login.html">Admin Panel</a> |
+<a href="setup.html">Setup New Org</a>
+</div>
+</div>
+<div class="card small">
+<h3>Check Your Status (Live)</h3>
+<select id="checkOrgSelect"></select>
+<input type="text" id="checkId" placeholder="Enter ID to check status">
+<button onclick="checkStatus()" class="btn-secondary">Check Status</button>
+<p id="statusResult"></p>
+</div>
 </div>
 
 <script type="module">
 import { db, ref, get, set } from "./firebase-config.js";
 
+let allOrgs={};
+function slugify(n){return n.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');}
+
+async function loadOrgs(){
+ const orgsSnap=await get(ref(db,"orgs"));
+ const oldSnap=await get(ref(db,"org"));
+ allOrgs=orgsSnap.val()||{};
+ if(oldSnap.exists() &&!allOrgs[slugify(oldSnap.val().name)]){
+  allOrgs[slugify(oldSnap.val().name)]={name:oldSnap.val().name, slug:slugify(oldSnap.val().name)};
+ }
+ const sel=document.getElementById("orgSelect");
+ const checkSel=document.getElementById("checkOrgSelect");
+ if(Object.keys(allOrgs).length===0){
+  sel.innerHTML='<option>No org setup yet - Contact Super Admin</option>';
+  checkSel.innerHTML='<option>No orgs</option>';
+  document.getElementById("orgDisplay").innerText="No Organization Found - Go to Setup";
+  return;
+ }
+ let opts='<option value="">-- Select Your Organization --</option>';
+ Object.values(allOrgs).forEach(o=>{ opts+=`<option value="${o.slug}">${o.name}</option>`; });
+ sel.innerHTML=opts;
+ checkSel.innerHTML=opts;
+
+ // URL param support: ?org=slug
+ const urlParams=new URLSearchParams(window.location.search);
+ const orgParam=urlParams.get("org");
+ if(orgParam && allOrgs[orgParam]){
+  sel.value=orgParam;
+  checkSel.value=orgParam;
+  document.getElementById("orgDisplay").innerText=allOrgs[orgParam].name;
+  document.getElementById("headerOrg").innerText=allOrgs[orgParam].name;
+ }
+
+ sel.addEventListener("change", e=>{
+  const slug=e.target.value;
+  document.getElementById("orgDisplay").innerText= slug? allOrgs[slug].name : "Select above";
+  document.getElementById("headerOrg").innerText= slug? allOrgs[slug].name : "Multi-Org Cloud";
+  checkSel.value=slug;
+ });
+}
+
 window.registerVoter = async function(){
-  const name = document.getElementById('regName').value.trim();
-  const id = document.getElementById('regId').value.trim();
-  const phone = document.getElementById('regPhone').value.trim();
-  const course = document.getElementById('regCourse').value.trim();
-  const msg = document.getElementById('regMsg');
+ if(!navigator.onLine){ alert("🔴 Online only"); return; }
+ const orgSlug=document.getElementById("orgSelect").value.trim();
+ const name=document.getElementById('regName').value.trim();
+ const id=document.getElementById('regId').value.trim();
+ const phone=document.getElementById('regPhone').value.trim();
+ const course=document.getElementById('regCourse').value.trim();
+ const msg=document.getElementById('regMsg');
 
-  if(name.length<3 || id.length<3 || phone.length<9){
-    msg.innerText="❌ Fill Name, ID, and valid Phone";
+ if(!orgSlug){ msg.innerText="❌ Select your Organization first"; return; }
+ if(name.length<3 || id.length<3 || phone.length<9){ msg.innerText="❌ Fill Name, ID, and valid Phone"; return; }
+
+ const orgName=allOrgs[orgSlug]?.name||orgSlug;
+ msg.innerText=`Checking cloud for ${orgName}...`;
+
+ // Check if ID exists in THIS org only (not nationwide, allow same ID in different orgs)
+ const checks=await Promise.all([
+  get(ref(db, `pending/${id}`)),
+  get(ref(db, `stage2/${id}`)),
+  get(ref(db, `approved/${id}`))
+ ]);
+
+ // If exists, verify if it's for same org - if same org block, if different org allow
+ for(let snap of checks){
+  if(snap.exists()){
+   const val=snap.val();
+   // old data without orgSlug = treat as conflict
+   if(!val.orgSlug || val.orgSlug===orgSlug){
+    msg.innerText=`❌ This ID already registered in ${val.org||orgName}. Check status below.`;
     return;
+   }
   }
+ }
 
-  msg.innerText="Checking cloud...";
+ // Save with org isolation
+ await set(ref(db, `pending/${id}`), {
+  id, name, phone, course:course||"N/A",
+  org: orgName, orgSlug,
+  created: new Date().toLocaleString()
+ });
 
-  // Check if ID already exists anywhere in cloud
-  const checks = await Promise.all([
-    get(ref(db, `pending/${id}`)),
-    get(ref(db, `stage2/${id}`)),
-    get(ref(db, `approved/${id}`))
-  ]);
+ await set(ref(db, `audit/${Date.now()}`), {
+  user:`VOTER-${id}`, org:orgName, orgSlug,
+  action:`REGISTERED - ${name} for ${orgName} Phone:${phone}`,
+  time:new Date().toLocaleString()
+ });
 
-  if(checks.some(s=>s.exists())){
-    msg.innerText="❌ This ID is already registered in cloud. Check status below.";
-    return;
-  }
-
-  // Save to pending in cloud - appears instantly in admin panel on any device
-  await set(ref(db, `pending/${id}`), {
-    id: id,
-    name: name,
-    phone: phone,
-    course: course || "N/A",
-    created: new Date().toLocaleString()
-  });
-
-  // Audit
-  await set(ref(db, `audit/${Date.now()}`), {
-    user: `VOTER-${id}`,
-    action: `REGISTERED - ${name} Phone:${phone}`,
-    time: new Date().toLocaleString()
-  });
-
-  msg.innerHTML = `✅ <b>Registration sent to cloud!</b><br>Your ID <b>${id}</b> is now waiting for Admin1 approval.<br>Use Check Status below to see progress.`;
-  document.getElementById('regName').value="";
-  document.getElementById('regId').value="";
-  document.getElementById('regPhone').value="";
-  document.getElementById('regCourse').value="";
+ msg.innerHTML=`✅ <b>Registration sent to ${orgName} cloud!</b><br>Your ID <b>${id}</b> waiting for approval in <b>${orgName}</b>.<br>Check status below.`;
+ document.getElementById('regName').value=""; document.getElementById('regId').value=""; document.getElementById('regPhone').value=""; document.getElementById('regCourse').value="";
 }
 
 window.checkStatus = async function(){
-  const id = document.getElementById('checkId').value.trim();
-  const result = document.getElementById('statusResult');
-  if(!id){ result.innerText="Enter ID"; return; }
-  
-  result.innerText="Checking cloud...";
+ const orgSlug=document.getElementById("checkOrgSelect").value;
+ const id=document.getElementById('checkId').value.trim();
+ const result=document.getElementById('statusResult');
+ if(!orgSlug){ result.innerText="❌ Select Organization first"; return; }
+ if(!id){ result.innerText="Enter ID"; return; }
+ result.innerText="Checking cloud...";
+ const orgName=allOrgs[orgSlug]?.name||orgSlug;
 
-  const pending = await get(ref(db, `pending/${id}`));
-  const stage2 = await get(ref(db, `stage2/${id}`));
-  const approved = await get(ref(db, `approved/${id}`));
-  const voted = await get(ref(db, `voters/${id}`));
+ const [pendingSnap, stage2Snap, approvedSnap, votedSnap] = await Promise.all([
+  get(ref(db, `pending/${id}`)),
+  get(ref(db, `stage2/${id}`)),
+  get(ref(db, `approved/${id}`)),
+  get(ref(db, `voters/${id}`))
+ ]);
 
-  if(approved.exists()){
-    if(voted.exists()){
-      result.innerHTML = `✅ <b style="color:green">ID ${id} - APPROVED & VOTED</b><br>Name: ${approved.val().name}<br>You have already voted on ${voted.val().votedAt}`;
-    } else {
-      result.innerHTML = `✅ <b style="color:#27ae60">ID ${id} - FULLY APPROVED!</b><br>Name: ${approved.val().name}<br>You can now go to <a href="index.html">Vote Page</a> and vote!`;
-    }
-  } else if(stage2.exists()){
-    result.innerHTML = `⏳ <b style="color:#f39c12">ID ${id} - Stage 1 Approved</b><br>Waiting for Admin2 final approval. Check again in 5 mins.`;
-  } else if(pending.exists()){
-    result.innerHTML = `⏳ <b style="color:#e67e22">ID ${id} - Pending</b><br>Name: ${pending.val().name}<br>Waiting for Admin1 to approve.`;
+ function belongsToOrg(snap){
+  if(!snap.exists()) return false;
+  const v=snap.val();
+  if(!v.orgSlug) return true; // backward compat
+  return v.orgSlug===orgSlug;
+ }
+
+ if(approvedSnap.exists() && belongsToOrg(approvedSnap)){
+  if(votedSnap.exists() && belongsToOrg(votedSnap)){
+   result.innerHTML=`✅ <b style="color:green">ID ${id} - APPROVED & VOTED in ${orgName}</b><br>Name: ${approvedSnap.val().name}<br>Voted on ${votedSnap.val().votedAt}`;
   } else {
-    result.innerHTML = `❌ <b style="color:#c0392b">ID ${id} - Not Found</b><br>Not registered yet. Fill form above.`;
+   result.innerHTML=`✅ <b style="color:#27ae60">ID ${id} - FULLY APPROVED for ${orgName}!</b><br>Name: ${approvedSnap.val().name}<br>Go to <a href="index.html?org=${orgSlug}">Vote Page for ${orgName}</a>`;
   }
+ } else if(stage2Snap.exists() && belongsToOrg(stage2Snap)){
+  result.innerHTML=`⏳ <b style="color:#f39c12">ID ${id} - Stage 1 Approved in ${orgName}</b><br>Waiting for final approval.`;
+ } else if(pendingSnap.exists() && belongsToOrg(pendingSnap)){
+  result.innerHTML=`⏳ <b style="color:#e67e22">ID ${id} - Pending in ${orgName}</b><br>Name: ${pendingSnap.val().name}<br>Waiting for Admin1.`;
+ } else {
+  result.innerHTML=`❌ <b style="color:#c0392b">ID ${id} - Not Found in ${orgName}</b><br>Not registered in ${orgName}. Register above.<br>If you registered in different org, select correct org.`;
+ }
 }
+
+loadOrgs();
 </script>
 </body>
 </html>
