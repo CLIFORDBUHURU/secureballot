@@ -1,126 +1,239 @@
-<!DOCTYPE html>
-<html><head><script>
-// ONLINE ONLY ENFORCEMENT
+<!doctype html>
+<html>
+<head>
+<script>
 function checkOnline(){
-  if(!navigator.onLine){
-    document.body.innerHTML = `<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif">
-    <div><h1>🔴 No Internet Connection</h1><h3>SecureBallot Works Online Only</h3><p>Please connect to WiFi or Data to vote, register or view results.</p><p style="margin-top:20px">This prevents double voting and fraud.</p><button onclick="location.reload()" style="padding:12px 20px;border-radius:8px;border:none;margin-top:20px;font-weight:bold;cursor:pointer">🔄 Retry When Online</button></div></div>`;
-    return false;
-  }
-  return true;
+ if(!navigator.onLine){
+  document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>🔴 No Internet - Cloud Only</h1><p>Connect to view admin panel</p><button onclick="location.reload()" style="padding:12px 20px;border-radius:8px;border:none;margin-top:20px;font-weight:bold">Retry</button></div></div>`;
+  return false;
+ } return true;
 }
-window.addEventListener('load', checkOnline);
-window.addEventListener('offline', checkOnline);
-window.addEventListener('online', ()=> location.reload());
-setInterval(checkOnline, 3000);
-</script><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Admin Panel - Cloud Final</title><link rel="stylesheet" href="style.css"></head>
+window.addEventListener("load", checkOnline);
+window.addEventListener("offline", checkOnline);
+window.addEventListener("online", ()=>location.reload());
+setInterval(checkOnline,3000);
+</script>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin Panel - Multi-Org Cloud</title>
+<link rel="stylesheet" href="style.css" />
+</head>
 <body>
 <div class="header">
-  <h2>🔒 SecureBallot Admin - CLOUD</h2>
-  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <span id="adminInfo" style="color:white"></span>
-    <a href="results.html" style="color:white;background:#27ae60;padding:6px 12px;border-radius:6px;text-decoration:none">📊 Results</a>
-    <a href="#" onclick="logout()" style="color:white">Logout</a>
-  </div>
+<h2>🔒 SecureBallot Admin - CLOUD</h2>
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+<span id="adminInfo" style="color:white"></span>
+<span id="orgInfo" style="color:#2ecc71;background:#0a1e3c;padding:4px 8px;border-radius:6px;font-weight:bold"></span>
+<a href="results.html" style="color:white;background:#27ae60;padding:6px 12px;border-radius:6px;text-decoration:none">📊 Results</a>
+<a href="#" onclick="logout()" style="color:white">Logout</a>
+</div>
 </div>
 <div class="container">
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px">
-    <button onclick="showTab('pending')">Pending (<span id="countPending">0</span>)</button>
-    <button onclick="showTab('stage2')">Stage 2 (<span id="countStage2">0</span>)</button>
-    <button onclick="showTab('approved')">Approved (<span id="countApproved">0</span>)</button>
-    <button onclick="showTab('candidates')" style="background:#8e44ad;color:white">👥 Posts & Candidates</button>
-    <button onclick="showTab('results')" style="background:#27ae60;color:white">📊 Results (<span id="countVotes">0</span>)</button>
-    <button onclick="showTab('voters')">Voted</button>
-    <button onclick="showTab('admins')">Admins</button>
-    <button onclick="showTab('audit')">Audit</button>
-  </div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:15px">
+<button onclick="showTab('pending')">Pending (<span id="countPending">0</span>)</button>
+<button onclick="showTab('stage2')">Stage 2 (<span id="countStage2">0</span>)</button>
+<button onclick="showTab('approved')">Approved (<span id="countApproved">0</span>)</button>
+<button onclick="showTab('candidates')" style="background:#8e44ad;color:white">👥 Posts & Candidates</button>
+<button onclick="showTab('results')" style="background:#27ae60;color:white">📊 Results (<span id="countVotes">0</span>)</button>
+<button onclick="showTab('voters')">Voted</button>
+<button onclick="showTab('admins')">Admins</button>
+<button onclick="showTab('audit')">Audit</button>
+</div>
 
-  <div id="tab-pending" class="card"><h3>Pending - Admin1</h3><div id="pendingList"></div></div>
-  <div id="tab-stage2" class="card hidden"><h3>Stage 2 - Admin2</h3><div id="stage2List"></div></div>
-  <div id="tab-approved" class="card hidden"><h3>Approved Voters</h3><div id="approvedList"></div></div>
+<div id="tab-pending" class="card"><h3>Pending - Admin1 - <span id="pendingOrg"></span></h3><div id="pendingList"></div></div>
+<div id="tab-stage2" class="card hidden"><h3>Stage 2 - Admin2 - <span id="stage2Org"></span></h3><div id="stage2List"></div></div>
+<div id="tab-approved" class="card hidden"><h3>Approved Voters - <span id="approvedOrg"></span></h3><div id="approvedList"></div></div>
 
-  <div id="tab-candidates" class="card hidden" style="border:2px solid #8e44ad">
-    <h3>👥 Manage Posts & Candidates</h3>
-    <div style="background:#f5eef8;padding:12px;border-radius:8px;margin-bottom:15px">
-      <h4>Add Post / Position</h4>
-      <input id="postName" placeholder="e.g. Chairperson, Secretary, Treasurer">
-      <button onclick="addPost()" style="background:#8e44ad;color:white">Add Post</button>
-      <div id="postsList" style="margin-top:10px"></div>
-    </div>
-    <div style="background:#eaf2f8;padding:12px;border-radius:8px">
-      <h4>Add Candidate</h4>
-      <select id="candPost"><option>Loading posts...</option></select>
-      <input id="candName" placeholder="Full Name">
-      <input id="candParty" placeholder="Party / Team">
-      <input id="candManifesto" placeholder="Manifesto">
-      <input id="candPhoto" placeholder="Photo URL (leave blank for random)">
-      <button onclick="addCandidate()" class="vote-btn" style="background:#8e44ad">Add Candidate to Cloud</button>
-      <p id="candMsg"></p>
-      <div id="candidatesAdminList" style="margin-top:15px"></div>
-    </div>
-  </div>
+<div id="tab-candidates" class="card hidden" style="border:2px solid #8e44ad">
+<h3>👥 Manage Posts & Candidates - <span id="candOrg"></span></h3>
+<div style="background:#f5eef8;padding:12px;border-radius:8px;margin-bottom:15px">
+<h4>Add Post / Position</h4>
+<input id="postName" placeholder="e.g. Chairperson, Secretary" />
+<button onclick="addPost()" style="background:#8e44ad;color:white">Add Post</button>
+<div id="postsList" style="margin-top:10px"></div>
+</div>
+<div style="background:#eaf2f8;padding:12px;border-radius:8px">
+<h4>Add Candidate</h4>
+<select id="candPost"><option>Loading posts...</option></select>
+<input id="candName" placeholder="Full Name" />
+<input id="candParty" placeholder="Party / Team" />
+<input id="candManifesto" placeholder="Manifesto" />
+<input id="candPhoto" placeholder="Photo URL (blank for random)" />
+<button onclick="addCandidate()" class="vote-btn" style="background:#8e44ad">Add Candidate to Cloud</button>
+<p id="candMsg"></p>
+<div id="candidatesAdminList" style="margin-top:15px"></div>
+</div>
+</div>
 
-  <div id="tab-results" class="card hidden" style="border:2px solid #27ae60">
-    <h3>📊 Live Results</h3>
-    <canvas id="adminChart" width="400" height="200"></canvas>
-    <div id="resultBarsAdmin" style="margin-top:15px"></div>
-    <p id="resultTotalAdmin" style="font-weight:bold"></p>
-    <button onclick="exportResults()" class="btn-secondary">Export CSV</button>
-  </div>
+<div id="tab-results" class="card hidden" style="border:2px solid #27ae60">
+<h3>📊 Live Results - <span id="resultsOrg"></span></h3>
+<canvas id="adminChart" width="400" height="200"></canvas>
+<div id="resultBarsAdmin" style="margin-top:15px"></div>
+<p id="resultTotalAdmin" style="font-weight:bold"></p>
+<button onclick="exportResults()" class="btn-secondary">Export CSV</button>
+</div>
 
-  <div id="tab-voters" class="card hidden"><h3>Voted List</h3><div id="votersList"></div></div>
-  <div id="tab-admins" class="card hidden"><h3>Admins (Super Admin Only)</h3><div id="adminCreateBox"></div><div id="adminsList"></div></div>
-  <div id="tab-audit" class="card hidden"><h3>Audit Log</h3><div id="auditList"></div></div>
+<div id="tab-voters" class="card hidden"><h3>Voted List</h3><div id="votersList"></div></div>
+<div id="tab-admins" class="card hidden"><h3>Admins for Org: <span id="adminsOrg"></span> (Super Admin Only)</h3><div id="adminCreateBox"></div><div id="adminsList"></div></div>
+<div id="tab-audit" class="card hidden"><h3>Audit Log - <span id="auditOrg"></span></h3><div id="auditList"></div></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script type="module">
 import { db, ref, get, set, update, remove, onValue } from "./firebase-config.js";
-let role = localStorage.getItem('sb_admin_role');
-let user = localStorage.getItem('sb_admin_user');
-if(!localStorage.getItem('sb_is_admin')){ window.location.href="admin-login.html"; }
-document.getElementById('adminInfo').innerText = `${user} (${role})`;
-window.showTab = function(tab){
-  document.querySelectorAll('[id^="tab-"]').forEach(d=>d.classList.add('hidden'));
-  document.getElementById(`tab-${tab}`).classList.remove('hidden');
-  if(tab==='results') loadResultsAdmin();
+
+let role = localStorage.getItem("sb_admin_role");
+let user = localStorage.getItem("sb_admin_user");
+let org = localStorage.getItem("sb_admin_org") || "";
+let orgSlug = localStorage.getItem("sb_admin_orgSlug") || "";
+
+if (!localStorage.getItem("sb_is_admin")) {
+ window.location.href = "admin-login.html";
 }
-window.logout = function(){ localStorage.clear(); window.location.href="admin-login.html"; }
 
-onValue(ref(db,'pending'), s=>{ document.getElementById('countPending').innerText=Object.keys(s.val()||{}).length; renderPending(s.val()||{}); });
-onValue(ref(db,'stage2'), s=>{ document.getElementById('countStage2').innerText=Object.keys(s.val()||{}).length; renderStage2(s.val()||{}); });
-onValue(ref(db,'approved'), s=>{ document.getElementById('countApproved').innerText=Object.keys(s.val()||{}).length; renderApproved(s.val()||{}); });
-onValue(ref(db,'votes'), s=>{ document.getElementById('countVotes').innerText=Object.keys(s.val()||{}).length; });
-onValue(ref(db,'voters'), s=>{ renderVoters(s.val()||{}); });
-onValue(ref(db,'admins'), s=>{ renderAdmins(s.val()||{}); });
-onValue(ref(db,'audit'), s=>{ renderAudit(s.val()||{}); });
-onValue(ref(db,'posts'), s=>{ renderPosts(s.val()||{}); });
-onValue(ref(db,'candidates'), s=>{ renderCandidatesAdmin(s.val()||{}); });
+// Fetch full admin record to get org if not in localStorage (multi-org migration)
+async function initAdmin(){
+ const snap = await get(ref(db, `admins/${user}`));
+ if(snap.exists()){
+  const adminRec = snap.val();
+  org = adminRec.org || org;
+  orgSlug = adminRec.orgSlug || org.toLowerCase().replace(/[^a-z0-9]+/g,'_');
+  localStorage.setItem("sb_admin_org", org);
+  localStorage.setItem("sb_admin_orgSlug", orgSlug);
+  document.getElementById("adminInfo").innerText = `${user} (${role})`;
+  document.getElementById("orgInfo").innerText = `🏢 ${org}`;
+  document.querySelectorAll('[id$="Org"]').forEach(el=>el.innerText = org);
+  loadAll();
+ } else {
+  document.getElementById("adminInfo").innerText = `${user} (${role})`;
+ }
+}
+initAdmin();
 
-function renderPending(data){ let h=""; Object.values(data).forEach(v=>{ h+=`<div style="border:1px solid #ddd;padding:10px;margin:5px;border-radius:6px"><b>${v.name}</b> ID:${v.id} ${v.phone}<br><button onclick="approve1('${v.id}')">Approve Stage1 →</button> <button onclick="reject('${v.id}','pending')">Reject</button></div>`; }); document.getElementById('pendingList').innerHTML=h||"No pending"; }
-function renderStage2(data){ let h=""; Object.values(data).forEach(v=>{ h+=`<div style="border:1px solid #f39c12;padding:10px;margin:5px;border-radius:6px;background:#fef9e7"><b>${v.name}</b> ID:${v.id}<br><button onclick="approve2('${v.id}')" style="background:#27ae60;color:white">Final Approve ✓</button> <button onclick="reject('${v.id}','stage2')">Reject</button></div>`; }); document.getElementById('stage2List').innerHTML=h||"No stage2"; }
-function renderApproved(data){ let h=Object.values(data).map(v=>`<div style="padding:8px;border-bottom:1px solid #eee">${v.name} - ${v.id}</div>`).join(''); document.getElementById('approvedList').innerHTML=h||"None"; }
-function renderVoters(data){ let h=Object.values(data).map(v=>`<div style="padding:8px;border-bottom:1px solid #eee">${v.name} - ${v.id} - ${v.votedAt}</div>`).join(''); document.getElementById('votersList').innerHTML=h||"No votes yet"; }
-function renderAdmins(data){ let h=Object.values(data).map(a=>`<div style="padding:8px;border-bottom:1px solid #eee">${a.username} (${a.role}) - ${a.email} Active:${a.is_active} <button onclick="toggleAdmin('${a.username}',${!a.is_active})">${a.is_active?'Disable':'Enable'}</button></div>`).join(''); document.getElementById('adminsList').innerHTML=h; if(role==='superadmin'){ document.getElementById('adminCreateBox').innerHTML=`<input id="newAUser" placeholder="Username"><input id="newAEmail" placeholder="Email"><input id="newAPhone" placeholder="Phone"><select id="newARole"><option value="admin1">Admin1</option><option value="admin2">Admin2</option><option value="superadmin">SuperAdmin</option></select><input id="newAPass" placeholder="Password min 8"><button onclick="createAdmin()">Create Admin</button><hr>`; } }
-function renderAudit(data){ let arr=Object.values(data).sort((a,b)=> new Date(b.time)-new Date(a.time)).slice(0,100); document.getElementById('auditList').innerHTML=arr.map(l=>`<div style="font-size:12px;padding:4px;border-bottom:1px solid #eee">${l.time} - <b>${l.user}</b> - ${l.action}</div>`).join(''); }
-function renderPosts(data){ let h=Object.entries(data).map(([id,p])=>`<span style="background:#8e44ad;color:white;padding:5px 10px;border-radius:15px;margin:3px;display:inline-block">${p.name} <a onclick="deletePost('${id}')" style="cursor:pointer;color:yellow"> x</a></span>`).join(''); document.getElementById('postsList').innerHTML=h||"No posts yet"; let o='<option value="">-- Select Post --</option>'; Object.entries(data).forEach(([id,p])=>{ o+=`<option value="${id}">${p.name}</option>`; }); document.getElementById('candPost').innerHTML=o; }
-function renderCandidatesAdmin(data){ let h=""; Object.entries(data).forEach(([id,c])=>{ h+=`<div style="border:1px solid #ddd;padding:10px;margin:5px;border-radius:6px;display:flex;gap:10px;align-items:center"><img src="${c.photo}" width="50" height="50" style="border-radius:50%"><div><b>${c.name}</b><br><small>${c.postName} | ${c.party}</small></div><button onclick="deleteCandidate('${id}')" style="margin-left:auto;background:#c0392b;color:white">Delete</button></div>`; }); document.getElementById('candidatesAdminList').innerHTML=h||"No candidates"; }
+window.showTab = function(tab){
+ document.querySelectorAll('[id^="tab-"]').forEach(d=>d.classList.add("hidden"));
+ document.getElementById(`tab-${tab}`).classList.remove("hidden");
+ if(tab==="results") loadResultsAdmin();
+};
+window.logout = function(){ localStorage.clear(); window.location.href="admin-login.html"; };
 
-window.approve1=async function(id){ const s=await get(ref(db,`pending/${id}`)); await set(ref(db,`stage2/${id}`),{...s.val(), stage1By:user, stage1At:new Date().toLocaleString()}); await remove(ref(db,`pending/${id}`)); await set(ref(db,`audit/${Date.now()}`),{user, action:`APPROVED STAGE1 ${id}`, time:new Date().toLocaleString()}); }
-window.approve2=async function(id){ const s=await get(ref(db,`stage2/${id}`)); await set(ref(db,`approved/${id}`),{...s.val(), approvedAt:new Date().toLocaleString(), approvedBy:user}); await remove(ref(db,`stage2/${id}`)); await set(ref(db,`audit/${Date.now()}`),{user, action:`FINAL APPROVED ${id}`, time:new Date().toLocaleString()}); }
-window.reject=async function(id,from){ await remove(ref(db,`${from}/${id}`)); await set(ref(db,`audit/${Date.now()}`),{user, action:`REJECTED ${id} from ${from}`, time:new Date().toLocaleString()}); }
-window.toggleAdmin=async function(u,st){ if(role!=='superadmin'){alert("Only SuperAdmin"); return;} await update(ref(db,`admins/${u}`),{is_active:st}); }
-window.createAdmin=async function(){ const u=document.getElementById('newAUser').value.trim(); const e=document.getElementById('newAEmail').value.trim(); const p=document.getElementById('newAPhone').value.trim(); const r=document.getElementById('newARole').value; const pass=document.getElementById('newAPass').value; if(u.length<3||pass.length<8){alert("Fill username pass 8");return;} await set(ref(db,`admins/${u}`),{username:u,password:btoa(pass),role:r,email:e,phone:p,is_active:true,must_change_password:true,created:new Date().toLocaleString()}); alert(`Admin ${u} created!`); }
-window.addPost=async function(){ const name=document.getElementById('postName').value.trim(); if(!name){alert("Enter post");return;} const id=name.toLowerCase().replace(/\s+/g,'_')+"_"+Date.now(); await set(ref(db,`posts/${id}`),{id,name,created:new Date().toLocaleString(),by:user}); document.getElementById('postName').value=""; }
-window.deletePost=async function(id){ if(!confirm("Delete post and its candidates?"))return; await remove(ref(db,`posts/${id}`)); const snap=await get(ref(db,'candidates')); const all=snap.val()||{}; for(let cid in all){ if(all[cid].postId===id) await remove(ref(db,`candidates/${cid}`)); } }
-window.addCandidate=async function(){ const postId=document.getElementById('candPost').value; const name=document.getElementById('candName').value.trim(); const party=document.getElementById('candParty').value.trim()||"Independent"; const manifesto=document.getElementById('candManifesto').value.trim()||""; const photo=document.getElementById('candPhoto').value.trim()||`https://i.pravatar.cc/100?img=${Math.floor(Math.random()*70)}`; if(!postId||!name){document.getElementById('candMsg').innerText="❌ Select post and name";return;} const postSnap=await get(ref(db,`posts/${postId}`)); const postName=postSnap.val()?.name||postId; const id=Date.now().toString(); await set(ref(db,`candidates/${id}`),{id,postId,postName,name,party,manifesto,photo,created:new Date().toLocaleString()}); document.getElementById('candMsg').innerText=`✅ ${name} added for ${postName}`; document.getElementById('candName').value=""; document.getElementById('candParty').value=""; document.getElementById('candManifesto').value=""; document.getElementById('candPhoto').value=""; }
-window.deleteCandidate=async function(id){ if(!confirm("Delete candidate?"))return; await remove(ref(db,`candidates/${id}`)); }
+function isForMyOrg(item){
+ if(!item) return false;
+ // old data without org = show only if my org is the first org (backward compatibility)
+ if(!item.org &&!item.orgSlug) return true;
+ return (item.org === org) || (item.orgSlug === orgSlug) || (!org && true);
+}
+
+function loadAll(){
+ onValue(ref(db, "pending"), s=>{
+  const all = s.val()||{};
+  const mine = Object.fromEntries(Object.entries(all).filter(([k,v])=>isForMyOrg(v)));
+  document.getElementById("countPending").innerText = Object.keys(mine).length;
+  renderPending(mine);
+ });
+ onValue(ref(db, "stage2"), s=>{
+  const all = s.val()||{};
+  const mine = Object.fromEntries(Object.entries(all).filter(([k,v])=>isForMyOrg(v)));
+  document.getElementById("countStage2").innerText = Object.keys(mine).length;
+  renderStage2(mine);
+ });
+ onValue(ref(db, "approved"), s=>{
+  const all = s.val()||{};
+  const mine = Object.fromEntries(Object.entries(all).filter(([k,v])=>isForMyOrg(v)));
+  document.getElementById("countApproved").innerText = Object.keys(mine).length;
+  renderApproved(mine);
+ });
+ onValue(ref(db, "votes"), s=>{
+  const all = s.val()||{};
+  const mine = Object.fromEntries(Object.entries(all).filter(([k,v])=>isForMyOrg(v)));
+  document.getElementById("countVotes").innerText = Object.keys(mine).length;
+ });
+ onValue(ref(db, "voters"), s=>{ renderVoters(Object.fromEntries(Object.entries(s.val()||{}).filter(([k,v])=>isForMyOrg(v)))) });
+ onValue(ref(db, "admins"), s=>{ renderAdmins(s.val()||{}) });
+ onValue(ref(db, "audit"), s=>{ renderAudit(Object.fromEntries(Object.entries(s.val()||{}).filter(([k,v])=>!v.org || isForMyOrg(v) || v.action.includes(org)))) });
+ onValue(ref(db, "posts"), s=>{ renderPosts(Object.fromEntries(Object.entries(s.val()||{}).filter(([k,v])=>isForMyOrg(v)))) });
+ onValue(ref(db, "candidates"), s=>{ renderCandidatesAdmin(Object.fromEntries(Object.entries(s.val()||{}).filter(([k,v])=>isForMyOrg(v)))) });
+}
+
+function renderPending(data){ let h=""; Object.values(data).forEach(v=>{ h+=`<div style="border:1px solid #ddd;padding:10px;margin:5px;border-radius:6px"><b>${v.name}</b> ID:${v.id} ${v.phone} <small>(${v.course||''})</small><br><button onclick="approve1('${v.id}')">Approve Stage1 →</button> <button onclick="reject('${v.id}','pending')">Reject</button></div>`; }); document.getElementById("pendingList").innerHTML=h||"No pending for "+org; }
+function renderStage2(data){ let h=""; Object.values(data).forEach(v=>{ h+=`<div style="border:1px solid #f39c12;padding:10px;margin:5px;border-radius:6px;background:#fef9e7"><b>${v.name}</b> ID:${v.id}<br><button onclick="approve2('${v.id}')" style="background:#27ae60;color:white">Final Approve ✓</button> <button onclick="reject('${v.id}','stage2')">Reject</button></div>`; }); document.getElementById("stage2List").innerHTML=h||"No stage2 for "+org; }
+function renderApproved(data){ let h=Object.values(data).map(v=>`<div style="padding:8px;border-bottom:1px solid #eee">${v.name} - ${v.id} - ${v.course||''}</div>`).join(""); document.getElementById("approvedList").innerHTML=h||"None for "+org; }
+function renderVoters(data){ let h=Object.values(data).map(v=>`<div style="padding:8px;border-bottom:1px solid #eee">${v.name} - ${v.id} - ${v.votedAt}</div>`).join(""); document.getElementById("votersList").innerHTML=h||"No votes yet for "+org; }
+function renderAdmins(data){
+ let mine = Object.values(data).filter(a=>!org || a.org===org || a.orgSlug===orgSlug);
+ let h=mine.map(a=>`<div style="padding:8px;border-bottom:1px solid #eee">${a.username} (${a.role}) - ${a.email} Active:${a.is_active} <button onclick="toggleAdmin('${a.username}',${!a.is_active})">${a.is_active?"Disable":"Enable"}</button></div>`).join("");
+ document.getElementById("adminsList").innerHTML=h;
+ if(role==="superadmin"){
+  document.getElementById("adminCreateBox").innerHTML=`<input id="newAUser" placeholder="Username"><input id="newAEmail" placeholder="Email"><input id="newAPhone" placeholder="Phone"><select id="newARole"><option value="admin1">Admin1</option><option value="admin2">Admin2</option><option value="superadmin">SuperAdmin</option></select><input id="newAPass" placeholder="Password min 8"><button onclick="createAdmin()">Create Admin for ${org}</button><hr>`;
+ }
+}
+function renderAudit(data){ let arr=Object.values(data).sort((a,b)=>new Date(b.time)-new Date(a.time)).slice(0,100); document.getElementById("auditList").innerHTML=arr.map(l=>`<div style="font-size:12px;padding:4px;border-bottom:1px solid #eee">${l.time} - <b>${l.user}</b> - ${l.action}</div>`).join(""); }
+function renderPosts(data){
+ let h=Object.entries(data).map(([id,p])=>`<span style="background:#8e44ad;color:white;padding:5px 10px;border-radius:15px;margin:3px;display:inline-block">${p.name} <a onclick="deletePost('${id}')" style="cursor:pointer;color:yellow"> x</a></span>`).join("");
+ document.getElementById("postsList").innerHTML=h||"No posts yet for "+org;
+ let o='<option value="">-- Select Post --</option>'; Object.entries(data).forEach(([id,p])=>{ o+=`<option value="${id}">${p.name}</option>`; }); document.getElementById("candPost").innerHTML=o;
+}
+function renderCandidatesAdmin(data){
+ let h=""; Object.entries(data).forEach(([id,c])=>{ h+=`<div style="border:1px solid #ddd;padding:10px;margin:5px;border-radius:6px;display:flex;gap:10px;align-items:center"><img src="${c.photo}" width="50" height="50" style="border-radius:50%"><div><b>${c.name}</b><br><small>${c.postName} | ${c.party}</small></div><button onclick="deleteCandidate('${id}')" style="margin-left:auto;background:#c0392b;color:white">Delete</button></div>`; });
+ document.getElementById("candidatesAdminList").innerHTML=h||"No candidates for "+org;
+}
+
+window.approve1 = async function(id){ const s=await get(ref(db, `pending/${id}`)); const val=s.val(); await set(ref(db, `stage2/${id}`), {...val, org, orgSlug, stage1By:user, stage1At:new Date().toLocaleString()}); await remove(ref(db, `pending/${id}`)); await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action:`APPROVED STAGE1 ${id} for ${org}`, time:new Date().toLocaleString()}); };
+window.approve2 = async function(id){ const s=await get(ref(db, `stage2/${id}`)); const val=s.val(); await set(ref(db, `approved/${id}`), {...val, org, orgSlug, approvedAt:new Date().toLocaleString(), approvedBy:user}); await remove(ref(db, `stage2/${id}`)); await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action:`FINAL APPROVED ${id} for ${org}`, time:new Date().toLocaleString()}); };
+window.reject = async function(id,from){ await remove(ref(db, `${from}/${id}`)); await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action:`REJECTED ${id} from ${from} for ${org}`, time:new Date().toLocaleString()}); };
+window.toggleAdmin = async function(u,st){ if(role!=="superadmin"){alert("Only SuperAdmin"); return;} await update(ref(db, `admins/${u}`), {is_active:st}); };
+window.createAdmin = async function(){
+ const u=document.getElementById("newAUser").value.trim();
+ const e=document.getElementById("newAEmail").value.trim();
+ const p=document.getElementById("newAPhone").value.trim();
+ const r=document.getElementById("newARole").value;
+ const pass=document.getElementById("newAPass").value;
+ if(u.length<3||pass.length<8){alert("Fill username pass 8"); return;}
+ await set(ref(db, `admins/${u}`), {username:u, password:btoa(pass), role:r, email:e, phone:p, org, orgSlug, is_active:true, must_change_password:true, created:new Date().toLocaleString()});
+ alert(`Admin ${u} created for ${org}!`);
+};
+window.addPost = async function(){
+ const name=document.getElementById("postName").value.trim(); if(!name){alert("Enter post"); return;}
+ const id=name.toLowerCase().replace(/\s+/g,"_")+"_"+Date.now();
+ await set(ref(db, `posts/${id}`), {id, name, org, orgSlug, created:new Date().toLocaleString(), by:user});
+ document.getElementById("postName").value="";
+};
+window.deletePost = async function(id){ if(!confirm("Delete post and its candidates?")) return; await remove(ref(db, `posts/${id}`)); const snap=await get(ref(db, "candidates")); const all=snap.val()||{}; for(let cid in all){ if(all[cid].postId===id && isForMyOrg(all[cid])) await remove(ref(db, `candidates/${cid}`)); } };
+window.addCandidate = async function(){
+ const postId=document.getElementById("candPost").value;
+ const name=document.getElementById("candName").value.trim();
+ const party=document.getElementById("candParty").value.trim()||"Independent";
+ const manifesto=document.getElementById("candManifesto").value.trim()||"";
+ const photo=document.getElementById("candPhoto").value.trim()||`https://i.pravatar.cc/100?img=${Math.floor(Math.random()*70)}`;
+ if(!postId||!name){ document.getElementById("candMsg").innerText="❌ Select post and name"; return; }
+ const postSnap=await get(ref(db, `posts/${postId}`)); const postName=postSnap.val()?.name||postId;
+ const id=Date.now().toString();
+ await set(ref(db, `candidates/${id}`), {id, postId, postName, name, party, manifesto, photo, org, orgSlug, created:new Date().toLocaleString()});
+ document.getElementById("candMsg").innerText=`✅ ${name} added for ${postName} in ${org}`;
+ document.getElementById("candName").value=""; document.getElementById("candParty").value=""; document.getElementById("candManifesto").value=""; document.getElementById("candPhoto").value="";
+};
+window.deleteCandidate = async function(id){ if(!confirm("Delete candidate?")) return; await remove(ref(db, `candidates/${id}`)); };
 
 let adminChart=null;
-window.loadResultsAdmin=function(){ onValue(ref(db,'candidates'), async (candSnap)=>{ const candData=candSnap.val()||{}; const votesSnap=await get(ref(db,'votes')); const votes=votesSnap.val()||{}; const byPost={}; Object.values(candData).forEach(c=>{ if(!byPost[c.postId]) byPost[c.postId]={name:c.postName, cands:{}}; byPost[c.postId].cands[c.id]= {...c, count:0}; }); Object.values(votes).forEach(v=>{ if(byPost[v.postId] && byPost[v.postId].cands[v.candidateId]) byPost[v.postId].cands[v.candidateId].count++; }); let html=""; Object.values(byPost).forEach(post=>{ html+=`<div style="margin:15px 0;padding:10px;border:1px solid #27ae60;border-radius:8px"><h4>${post.name}</h4>`; Object.values(post.cands).forEach(c=>{ const total=Object.values(post.cands).reduce((s,x)=>s+x.count,0); const per=total?Math.round(c.count/total*100):0; html+=`<div style="display:flex;justify-content:space-between;font-size:13px"><b>${c.name} (${c.party})</b><span>${c.count} (${per}%)</span></div><div style="background:#eee;height:12px;border-radius:6px;margin:4px 0 10px"><div style="background:#27ae60;width:${per}%;height:100%"></div></div>`; }); html+=`</div>`; }); document.getElementById('resultBarsAdmin').innerHTML=html||"No candidates/votes"; document.getElementById('resultTotalAdmin').innerText=`Total Vote Records: ${Object.keys(votes).length}`; }, {onlyOnce:true}); }
-window.exportResults=async function(){ const s=await get(ref(db,'votes')); const votes=s.val()||{}; let csv="postId,candidateId,hash,time\n"; Object.values(votes).forEach(v=>{ csv+=`${v.postId},${v.candidateId},${v.voterIdHash},${v.timestamp}\n`; }); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='results_cloud.csv'; a.click(); }
-showTab('pending');
+window.loadResultsAdmin = function(){
+ onValue(ref(db, "candidates"), async (candSnap)=>{
+  const allCands=candSnap.val()||{};
+  const candData=Object.fromEntries(Object.entries(allCands).filter(([k,v])=>isForMyOrg(v)));
+  const votesSnap=await get(ref(db, "votes")); const allVotes=votesSnap.val()||{};
+  const votes=Object.fromEntries(Object.entries(allVotes).filter(([k,v])=>isForMyOrg(v)));
+  const byPost={}; Object.values(candData).forEach(c=>{ if(!byPost[c.postId]) byPost[c.postId]={name:c.postName, cands:{}}; byPost[c.postId].cands[c.id]={...c,count:0}; });
+  Object.values(votes).forEach(v=>{ if(byPost[v.postId] && byPost[v.postId].cands[v.candidateId]) byPost[v.postId].cands[v.candidateId].count++; });
+  let html=""; Object.values(byPost).forEach(post=>{ html+=`<div style="margin:15px 0;padding:10px;border:1px solid #27ae60;border-radius:8px"><h4>${post.name}</h4>`; Object.values(post.cands).forEach(c=>{ const total=Object.values(post.cands).reduce((s,x)=>s+x.count,0); const per=total?Math.round((c.count/total)*100):0; html+=`<div style="display:flex;justify-content:space-between;font-size:13px"><b>${c.name} (${c.party})</b><span>${c.count} (${per}%)</span></div><div style="background:#eee;height:12px;border-radius:6px;margin:4px 0 10px"><div style="background:#27ae60;width:${per}%;height:100%"></div></div>`; }); html+=`</div>`; });
+  document.getElementById("resultBarsAdmin").innerHTML=html||"No candidates/votes for "+org;
+  document.getElementById("resultTotalAdmin").innerText=`Total Vote Records for ${org}: ${Object.keys(votes).length}`;
+ }, {onlyOnce:true});
+};
+window.exportResults = async function(){
+ const s=await get(ref(db, "votes")); const all=s.val()||{}; const votes=Object.fromEntries(Object.entries(all).filter(([k,v])=>isForMyOrg(v)));
+ let csv="org,postId,candidateId,hash,time\n"; Object.values(votes).forEach(v=>{ csv+=`${v.org||org},${v.postId},${v.candidateId},${v.voterIdHash},${v.timestamp}\n`; });
+ const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`results_${orgSlug}.csv`; a.click();
+};
+showTab("pending");
 </script>
 <style>.hidden{display:none} button{padding:6px 10px;margin:2px;border-radius:4px;border:1px solid #ccc;cursor:pointer}.candidate.selected{border:2px solid #27ae60;background:#e8f5e9}</style>
 </body>
