@@ -15,13 +15,15 @@ setInterval(checkOnline,3000);
 </script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Results - Institution Locked</title>
+<title>Results - Institution Locked + Publish Control</title>
 <link rel="stylesheet" href="style.css" />
 <style>
-select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #ccc;background:#e9ecef;font-weight:bold;cursor:not-allowed}
+select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #ccc;background:#e9ecef;font-weight:bold}
+select:disabled{cursor:not-allowed}
 .locked{border:2px solid #c0392b!important}
 .msg-locked{background:#f8d7da;border:2px solid #c0392b;padding:12px;border-radius:8px;color:#721c24;font-size:13px;margin:10px 0}
 .msg-ok{background:#d4edda;border:1px solid #27ae60;padding:10px;border-radius:8px;font-size:13px}
+.msg-warn{background:#fff3cd;border:2px solid #ffc107;padding:12px;border-radius:8px;font-size:13px;margin:10px 0}
 .badge-winner{background:#27ae60;color:white;padding:2px 8px;border-radius:10px;font-size:11px}
 </style>
 </head>
@@ -35,8 +37,9 @@ select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #
 </div>
 <div class="container">
 <div class="card">
-<h1>Live Count - Restricted to Your Institution</h1>
+<h1>Live Count - Restricted</h1>
 <div id="accessInfo"></div>
+<div id="publishBanner"></div>
 <select id="orgSelect" disabled><option>Loading...</option></select>
 <p style="font-size:12px">Organization: <b id="orgDisplay">Loading</b></p>
 <div id="resultsContainer">Loading...</div>
@@ -46,7 +49,7 @@ select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #
 <div id="rankSummary"></div>
 </div>
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:15px">
-<button onclick="exportFullDetails()" style="background:#8e44ad;color:white;padding:10px 16px;border-radius:8px;border:none;font-weight:bold">📥 Export FULL CSV (Your Org Only)</button>
+<button onclick="exportFullDetails()" id="exportBtn" style="background:#8e44ad;color:white;padding:10px 16px;border-radius:8px;border:none;font-weight:bold">📥 Export FULL CSV (Your Org Only)</button>
 <button onclick="exportRankSummary()" style="background:#27ae60;color:white;padding:10px 16px;border-radius:8px;border:none;font-weight:bold">🏆 Export Rank CSV</button>
 <button onclick="clearResults()" id="clearBtn" style="background:#c0392b;color:white;padding:10px 16px;border-radius:8px;border:none">🗑️ Clear Votes (Your Org Only)</button>
 </div>
@@ -56,68 +59,109 @@ select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #
 <script type="module">
 import { db, ref, get, remove, onValue } from "./firebase-config.js";
 
-// ==== ONLY THESE EMAILS CAN SEE ALL ORGS (YOU) ====
+// ==== ONLY THESE EMAILS CAN SEE ALL ORGS (PLATFORM OWNER) ====
 const GLOBAL_MASTERS = ["cliford@gmail.com","clifordtech@gmail.com","admin@secureballot.co.ke"];
-// ===================================================
+// ==============================================================
 
 const role = localStorage.getItem("sb_admin_role") || "";
 const adminOrgSlug = localStorage.getItem("sb_admin_orgSlug") || "";
 const adminOrgName = localStorage.getItem("sb_admin_org") || "";
 const adminEmail = (localStorage.getItem("sb_admin_email")||"").toLowerCase();
 
-if(!adminOrgSlug){
-  document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px"><div><h1>🔒 Login Required</h1><a href="admin-login.html" style="background:white;color:#0f2a5a;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold">Admin Login</a></div></div>`;
-  throw new Error("No org");
-}
+const voterVerified = localStorage.getItem("sb_voter_verified")==="true";
+const voterHasVoted = localStorage.getItem("sb_voter_has_voted")==="true";
+const voterOrgSlug = localStorage.getItem("sb_voter_orgSlug") || "";
+const voterOrgName = localStorage.getItem("sb_voter_org") || "";
+const voterName = localStorage.getItem("sb_voter_name") || "";
 
-let currentOrgSlug = adminOrgSlug;
-let currentOrgName = adminOrgName;
+let currentOrgSlug = "";
+let currentOrgName = "";
 let currentData = {};
 let isGlobalMaster = GLOBAL_MASTERS.includes(adminEmail);
+let isAdmin =!!adminOrgSlug;
+let isVoter = voterVerified;
+
+// If no session at all -> block
+if(!isAdmin &&!isVoter &&!isGlobalMaster){
+  document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>🔒 Login Required</h1><p>You must login as Voter (and vote) or as Admin to view results.</p><a href="index.html" style="background:#27ae60;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:10px">Voter Login →</a><br><br><a href="admin-login.html" style="color:white;text-decoration:underline">Admin Login</a></div></div>`;
+  throw new Error("No session");
+}
 
 function slugify(n){ return n.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
 function esc(s){ if(s==null) return '""'; return '"'+String(s).replace(/"/g,'""')+'"'; }
 function isForMyOrg(item){ if(!item) return false; return item.orgSlug===currentOrgSlug; }
+
+async function isResultsPublished(slug){
+  if(!slug) return false;
+  if(isGlobalMaster) return true;
+  if(isAdmin) return true; // Admin can always see own results even if hidden from voters
+  const snap = await get(ref(db, `orgs/${slug}/settings/resultsPublished`));
+  return snap.exists() && snap.val()===true;
+}
 
 async function loadOrgs(){
  const orgsSnap=await get(ref(db,"orgs"));
  const allOrgs=orgsSnap.val()||{};
  const sel=document.getElementById("orgSelect");
  const accessDiv=document.getElementById("accessInfo");
+ const publishBanner=document.getElementById("publishBanner");
 
  if(isGlobalMaster){
-   // YOU - Platform Owner
-   let opts=`<option value="">-- All Organizations (YOU ARE PLATFORM OWNER) --</option>`;
+   let opts=`<option value="">-- All Organizations (PLATFORM OWNER) --</option>`;
    Object.values(allOrgs).forEach(o=>{ opts+=`<option value="${o.slug}">${o.name}</option>`; });
    sel.innerHTML=opts;
    sel.disabled=false;
    sel.classList.remove("locked");
-   currentOrgSlug = ""; // default all
-   accessDiv.innerHTML=`<div class="msg-ok">🔓 Platform Owner: ${adminEmail} - You can see ALL orgs. All other Super Admins are locked.</div>`;
+   currentOrgSlug = adminOrgSlug || ""; // default all if platform owner
+   currentOrgName = currentOrgSlug? (allOrgs[currentOrgSlug]?.name || adminOrgName) : "All Organizations";
+   accessDiv.innerHTML=`<div class="msg-ok">🔓 Platform Owner: ${adminEmail} - You can see ALL orgs. All other Super Admins are locked to own org.</div>`;
    const urlParams=new URLSearchParams(window.location.search);
    if(urlParams.get("org") && allOrgs[urlParams.get("org")]){
      sel.value=urlParams.get("org");
      currentOrgSlug=urlParams.get("org");
      currentOrgName=allOrgs[currentOrgSlug].name;
-   } else {
-     currentOrgName="All Organizations";
    }
    sel.addEventListener("change", e=>{
      currentOrgSlug=e.target.value;
-     currentOrgName=currentOrgSlug? allOrgs[currentOrgSlug].name : "All Organizations";
+     currentOrgName=currentOrgSlug? allOrgs[currentOrgSlug]?.name : "All Organizations";
      document.getElementById("orgDisplay").innerText=currentOrgName;
      document.getElementById("orgInfo").innerText=currentOrgName;
      loadResults();
    });
- } else {
-   // EVERYONE ELSE - EVEN SUPER ADMIN AT KISIWA - LOCKED TO OWN ORG
+ } else if(isAdmin){
+   // ADMIN - EVEN SUPER ADMIN - LOCKED TO OWN ORG
    sel.innerHTML=`<option value="${adminOrgSlug}">${adminOrgName} - LOCKED (Cannot view other institutions)</option>`;
    sel.value=adminOrgSlug;
    sel.disabled=true;
    sel.classList.add("locked");
    currentOrgSlug=adminOrgSlug;
    currentOrgName=adminOrgName;
-   accessDiv.innerHTML=`<div class="msg-locked">🔒 <b>INSTITUTION ISOLATED:</b> You are <b>${role}</b> of <b>${adminOrgName}</b> (${adminEmail||'superadmin'}).<br>⛔ You CANNOT see Marble Capital, KISS, or any other institution.<br>Even if you are Super Admin at Kisiwa, you can ONLY see Kisiwa data. Marble's Super Admin can ONLY see Marble data.</div>`;
+   accessDiv.innerHTML=`<div class="msg-locked">🔒 <b>INSTITUTION ISOLATED:</b> You are <b>${role}</b> of <b>${adminOrgName}</b> (${adminEmail||'superadmin'}).<br>⛔ You CANNOT see Marble Capital, KISS, etc. Super Admin at Kisiwa sees ONLY Kisiwa.</div>`;
+   // Show publish status to admin
+   const pubSnap = await get(ref(db, `orgs/${adminOrgSlug}/settings/resultsPublished`));
+   const pub = pubSnap.exists() && pubSnap.val()===true;
+   publishBanner.innerHTML = pub? `<div class="msg-ok">✅ Results are <b>PUBLISHED</b> - Voters of ${adminOrgName} CAN view results</div>` : `<div class="msg-warn">🔒 Results are <b>HIDDEN</b> from voters - Go to Admin Panel → Publish Results to allow voters to view</div>`;
+ } else if(isVoter){
+   // VOTER - LOCKED TO VOTER ORG + CHECK PUBLISH
+   if(!voterHasVoted){
+     document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>🗳️ Vote First</h1><p>You verified as ${voterName} but have not voted yet. Results are hidden until you vote.</p><a href="index.html" style="background:#27ae60;color:white;padding:12px 20px;border-radius:8px;text-decoration:none">Go Vote →</a></div></div>`;
+     throw new Error("Voter not voted");
+   }
+   const published = await isResultsPublished(voterOrgSlug);
+   if(!published){
+     document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>⏳ Results Not Yet Published</h1><p>Thank you for voting, ${voterName}!</p><p>Super Admin of <b>${voterOrgName}</b> has NOT yet published live results.</p><p style="font-size:12px;color:#ffcc00">You will be able to view results after Admin publishes them. Please check later or contact Admin.</p><a href="index.html" style="background:#95a5a6;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;margin-top:15px">Back to Home</a></div></div>`;
+     throw new Error("Not published for voter");
+   }
+   sel.innerHTML=`<option value="${voterOrgSlug}">${voterOrgName} - Your Institution</option>`;
+   sel.value=voterOrgSlug;
+   sel.disabled=true;
+   sel.classList.add("locked");
+   currentOrgSlug=voterOrgSlug;
+   currentOrgName=voterOrgName;
+   accessDiv.innerHTML=`<div class="msg-ok">✅ Voter Verified: <b>${voterName}</b> of <b>${voterOrgName}</b> - Results Published by Admin - You can view ${voterOrgName} only</div>`;
+   publishBanner.innerHTML=`<div class="msg-ok">📊 Live Results Published by Super Admin - ${voterOrgName}</div>`;
+   document.getElementById("clearBtn").style.display="none"; // voter cannot clear
+   document.getElementById("exportBtn").style.display="none";
  }
 
  document.getElementById("orgDisplay").innerText=currentOrgName;
@@ -125,8 +169,21 @@ async function loadOrgs(){
  loadResults();
 }
 
-function loadResults(){
- if(!isGlobalMaster){ currentOrgSlug=adminOrgSlug; currentOrgName=adminOrgName; }
+async function loadResults(){
+ if(!isGlobalMaster){
+   if(isAdmin) currentOrgSlug=adminOrgSlug;
+   if(isVoter) currentOrgSlug=voterOrgSlug;
+ }
+
+ // Re-check publish for voter before loading data
+ if(isVoter){
+   const published = await isResultsPublished(currentOrgSlug);
+   if(!published){
+     document.getElementById("resultsContainer").innerHTML=`<div style="text-align:center;padding:30px;background:#fff3cd;border:2px solid #ffc107;border-radius:10px"><h2>⏳ Results Not Published Yet by Admin</h2><p>Contact Super Admin of ${currentOrgName}</p></div>`;
+     return;
+   }
+ }
+
  onValue(ref(db, "votes"), async (snap)=>{
   const allVotes=snap.val()||{};
   const votes = currentOrgSlug? Object.fromEntries(Object.entries(allVotes).filter(([k,v])=>isForMyOrg(v))) : allVotes;
@@ -136,7 +193,7 @@ function loadResults(){
   currentData.votes=votes; currentData.candData=candData; currentData.total=Object.keys(votes).length;
 
   if(Object.keys(candData).length===0){
-   document.getElementById("resultsContainer").innerHTML=`<div style="text-align:center;padding:20px">No candidates for <b>${currentOrgName}</b>. Other institutions' candidates are hidden.</div>`;
+   document.getElementById("resultsContainer").innerHTML=`<div style="text-align:center;padding:20px">No candidates for <b>${currentOrgName}</b>. Other institutions hidden.</div>`;
    document.getElementById("resultTotal").innerText=`Total Votes in ${currentOrgName}: ${currentData.total}`;
    document.getElementById("rankSummary").innerHTML="No candidates";
    return;
@@ -169,6 +226,7 @@ function loadResults(){
 }
 
 window.exportFullDetails=function(){
+ if(isVoter){ alert("⛔ Voters cannot export"); return; }
  let csv="\uFEFF"; csv+=`${esc("Org")},${esc(currentOrgName)}\n${esc("Exported By")},${esc(adminEmail+" | "+role)}\n${esc("Date")},${esc(new Date().toLocaleString())}\n\n`;
  csv+=`${esc("Post")},${esc("Rank")},${esc("Candidate")},${esc("Party")},${esc("Votes")},${esc("%")},${esc("Status")}\n`;
  Object.values(currentData.byPost||{}).forEach(p=>{ Object.values(p.cands).sort((a,b)=>a.rank-b.rank).forEach(c=>{ csv+=`${esc(p.name)},${esc(c.rank)},${esc(c.name)},${esc(c.party)},${esc(c.count)},${esc(c.percentage+"%")},${esc(c.rank===1&&c.count>0?"WINNER":"")}\n`; }); });
@@ -176,6 +234,7 @@ window.exportFullDetails=function(){
 };
 window.exportRankSummary=window.exportFullDetails;
 window.clearResults=async function(){
+ if(isVoter){ alert("⛔ Voters cannot clear"); return; }
  const snap=await get(ref(db,"votes")); const all=snap.val()||{};
  if(!confirm(`Clear votes for ${currentOrgName} ONLY? Other institutions will NOT be affected.`)) return;
  for(let k in all){ if(isForMyOrg(all[k])) await remove(ref(db,`votes/${k}`)); }
