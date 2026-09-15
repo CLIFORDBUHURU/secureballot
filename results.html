@@ -15,17 +15,19 @@ setInterval(checkOnline,3000);
 </script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Results - Multi-Org Cloud + Full Export</title>
+<title>Results - Restricted By Org</title>
 <link rel="stylesheet" href="style.css" />
 <style>
 .hidden{display:none}
 select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #ccc}
+select:disabled{background:#e9ecef;cursor:not-allowed;font-weight:bold}
 .badge-winner{background:#27ae60;color:white;padding:2px 8px;border-radius:12px;font-size:11px;margin-left:6px}
+.locked-msg{background:#fff3cd;border:1px solid #ffc107;padding:8px;border-radius:6px;font-size:12px;margin:8px 0}
 </style>
 </head>
 <body>
 <div class="header">
-<h2>Live Results - Multi-Org Cloud</h2>
+<h2>Live Results - Restricted</h2>
 <div style="display:flex;gap:8px;align-items:center">
 <span id="orgInfo" style="color:#2ecc71;background:#0a1e3c;padding:4px 8px;border-radius:6px"></span>
 <a href="index.html" style="color:white">← Vote</a>
@@ -34,20 +36,21 @@ select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #
 <div class="container">
 <div class="card">
 <h1>Live Count - Transparent</h1>
-<select id="orgSelect"><option>Loading organizations...</option></select>
-<p style="font-size:12px">Organization: <b id="orgDisplay">Select org</b></p>
+<div id="accessInfo"></div>
+<select id="orgSelect"><option>Loading...</option></select>
+<p style="font-size:12px">Organization: <b id="orgDisplay">Loading</b></p>
 <div id="resultsContainer">Loading from cloud...</div>
 <p id="resultTotal" style="margin-top:15px;font-weight:bold"></p>
 
 <div id="summaryBox" style="margin-top:20px;padding:15px;background:#f8f9fa;border-radius:10px;border:2px dashed #0f2a5a">
-<h3>📋 Rank Summary (For Export)</h3>
+<h3>📋 Rank Summary</h3>
 <div id="rankSummary"></div>
 </div>
 
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:15px">
 <button onclick="exportFullDetails()" style="background:#8e44ad;color:white;padding:10px 16px;border-radius:8px;border:none;font-weight:bold">📥 Export FULL Details CSV</button>
 <button onclick="exportRankSummary()" style="background:#27ae60;color:white;padding:10px 16px;border-radius:8px;border:none;font-weight:bold">🏆 Export Rank Summary CSV</button>
-<button onclick="clearResults()" style="background:#c0392b;color:white;margin-left:auto" id="clearBtn" class="hidden">🗑️ Clear Votes (Super Admin)</button>
+<button onclick="clearResults()" style="background:#c0392b;color:white;margin-left:auto" id="clearBtn" class="hidden">🗑️ Clear Votes</button>
 </div>
 </div>
 </div>
@@ -55,38 +58,99 @@ select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #
 <script type="module">
 import { db, ref, get, remove, onValue } from "./firebase-config.js";
 
+// === SECURITY CHECK ===
+const role = localStorage.getItem("sb_admin_role"); // superadmin or admin1/admin2
+const adminOrgSlug = localStorage.getItem("sb_admin_orgSlug");
+const adminOrgName = localStorage.getItem("sb_admin_org");
+const adminEmail = localStorage.getItem("sb_admin_email");
+
 let allOrgs={}, currentOrgSlug="", currentOrgName="", currentData={ byPost:{}, votes:{}, candData:{}, total:0 };
-let isSuper=localStorage.getItem("sb_admin_role")==="superadmin";
+let isSuper = role === "superadmin";
+
+// If no admin login, force login
+if(!role ||!adminOrgSlug){
+  document.body.innerHTML = `<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>🔒 Access Denied</h1><p>You must login as Admin to view results.</p><p>Each admin can only view their own institution.</p><a href="admin-login.html" style="background:white;color:#0f2a5a;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:15px">Go to Admin Login</a></div></div>`;
+  throw new Error("Not logged in");
+}
+
 if(isSuper) document.getElementById("clearBtn").classList.remove("hidden");
 
 function slugify(n){ return n.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,''); }
-function esc(s){ if(s==null||s===undefined) return '""'; return '"' + String(s).replace(/"/g,'""') + '"'; }
-function isForMyOrg(item){
- if(!currentOrgSlug) return true;
- if(!item) return false;
- if(!item.orgSlug) return true;
- return item.orgSlug===currentOrgSlug;
-}
+function esc(s){ if(s==null) return '""'; return '"' + String(s).replace(/"/g,'""') + '"'; }
+function isForMyOrg(item){ if(!currentOrgSlug) return true; if(!item) return false; if(!item.orgSlug) return true; return item.orgSlug===currentOrgSlug; }
 
 async function loadOrgs(){
  const orgsSnap=await get(ref(db,"orgs"));
  const oldSnap=await get(ref(db,"org"));
  allOrgs=orgsSnap.val()||{};
  if(oldSnap.exists() &&!allOrgs[slugify(oldSnap.val().name)]){ allOrgs[slugify(oldSnap.val().name)]={name:oldSnap.val().name, slug:slugify(oldSnap.val().name)}; }
+
  const sel=document.getElementById("orgSelect");
- if(Object.keys(allOrgs).length===0){ sel.innerHTML='<option>No orgs setup yet</option>'; return; }
- let opts='<option value="">-- All Organizations --</option>';
- Object.values(allOrgs).forEach(o=>{ opts+=`<option value="${o.slug}">${o.name}</option>`; });
- sel.innerHTML=opts;
- const urlParams=new URLSearchParams(window.location.search);
- const orgParam=urlParams.get("org") || localStorage.getItem("sb_admin_orgSlug");
- if(orgParam && allOrgs[orgParam]){ sel.value=orgParam; currentOrgSlug=orgParam; currentOrgName=allOrgs[orgParam].name; document.getElementById("orgDisplay").innerText=currentOrgName; document.getElementById("orgInfo").innerText=currentOrgName; }
- else { document.getElementById("orgDisplay").innerText="All Orgs"; }
- sel.addEventListener("change", e=>{ currentOrgSlug=e.target.value; currentOrgName=currentOrgSlug? allOrgs[currentOrgSlug]?.name : ""; document.getElementById("orgDisplay").innerText=currentOrgName||"All Orgs"; document.getElementById("orgInfo").innerText=currentOrgName||"All Orgs"; loadResults(); });
+ const accessDiv=document.getElementById("accessInfo");
+
+ if(isSuper){
+   // SUPER ADMIN: can see all
+   let opts='<option value="">-- All Organizations (Nationwide) --</option>';
+   Object.values(allOrgs).forEach(o=>{ opts+=`<option value="${o.slug}">${o.name}</option>`; });
+   sel.innerHTML=opts;
+   // Try to respect URL param or last admin org
+   const urlParams=new URLSearchParams(window.location.search);
+   const orgParam=urlParams.get("org") || adminOrgSlug;
+   if(orgParam && allOrgs[orgParam]){
+     sel.value=orgParam; currentOrgSlug=orgParam; currentOrgName=allOrgs[orgParam].name;
+   } else {
+     currentOrgSlug=""; currentOrgName="";
+     document.getElementById("orgDisplay").innerText="All Organizations - Nationwide";
+     document.getElementById("orgInfo").innerText="SUPER ADMIN - All Orgs";
+   }
+   if(currentOrgSlug){
+     document.getElementById("orgDisplay").innerText=currentOrgName;
+     document.getElementById("orgInfo").innerText=currentOrgName;
+   }
+   accessDiv.innerHTML=`<div class="locked-msg">🔓 <b>Super Admin Mode:</b> You can view All Organizations. Logged as ${esc(adminEmail||'superadmin')}</div>`;
+   sel.disabled=false;
+ } else {
+   // NORMAL ADMIN: LOCKED TO OWN ORG ONLY
+   if(!allOrgs[adminOrgSlug]){
+     document.getElementById("resultsContainer").innerHTML=`<div style="color:#c0392b;padding:20px">Organization ${adminOrgName} not found. Contact Super Admin.</div>`;
+     sel.innerHTML=`<option>${adminOrgName}</option>`;
+     sel.disabled=true;
+     return;
+   }
+   currentOrgSlug=adminOrgSlug;
+   currentOrgName=adminOrgName || allOrgs[adminOrgSlug].name;
+   sel.innerHTML=`<option value="${currentOrgSlug}">${currentOrgName} (Your Institution Only)</option>`;
+   sel.value=currentOrgSlug;
+   sel.disabled=true; // cannot change
+   document.getElementById("orgDisplay").innerText=currentOrgName + " (Locked)";
+   document.getElementById("orgInfo").innerText=currentOrgName;
+   accessDiv.innerHTML=`<div class="locked-msg">🔒 <b>Restricted Access:</b> You are logged as <b>${adminOrgName}</b> Admin. You can ONLY view/export results for <b>${currentOrgName}</b>. You cannot access Marble Capital, Kisiwa, KISS etc.</div>`;
+ }
+
+ // Prevent URL tampering for normal admin
+ sel.addEventListener("change", e=>{
+   if(!isSuper){
+     e.target.value=currentOrgSlug; // force back
+     alert("⛔ Access Denied: You can only view your own institution ("+currentOrgName+")");
+     return;
+   }
+   currentOrgSlug=e.target.value;
+   currentOrgName=currentOrgSlug? allOrgs[currentOrgSlug]?.name : "";
+   document.getElementById("orgDisplay").innerText=currentOrgName||"All Organizations";
+   document.getElementById("orgInfo").innerText=currentOrgName||"All Orgs - Super Admin";
+   loadResults();
+ });
+
  loadResults();
 }
 
 function loadResults(){
+ // extra security: normal admin cannot force all orgs via URL
+ if(!isSuper){
+   currentOrgSlug=adminOrgSlug;
+   currentOrgName=adminOrgName;
+ }
+
  onValue(ref(db, "votes"), async (snap)=>{
   const allVotes=snap.val()||{};
   const votes=currentOrgSlug? Object.fromEntries(Object.entries(allVotes).filter(([k,v])=>isForMyOrg(v))) : allVotes;
@@ -96,8 +160,8 @@ function loadResults(){
   currentData.votes=votes; currentData.candData=candData; currentData.total=Object.keys(votes).length;
 
   if(Object.keys(candData).length===0){
-   document.getElementById("resultsContainer").innerHTML=`<div style="text-align:center;padding:20px;color:#c0392b">No Candidates in ${esc(currentOrgName||'system')}</div>`;
-   document.getElementById("resultTotal").innerText=`Total Votes: ${currentData.total}`;
+   document.getElementById("resultsContainer").innerHTML=`<div style="text-align:center;padding:20px">No candidates for ${currentOrgName||'All Orgs'}</div>`;
+   document.getElementById("resultTotal").innerText=`Total Votes in ${currentOrgName||'All Orgs'}: ${currentData.total}`;
    document.getElementById("rankSummary").innerHTML="No candidates";
    return;
   }
@@ -111,15 +175,15 @@ function loadResults(){
   });
   currentData.byPost=byPost;
 
-  let html=""; let rankHtml=`<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="background:#0f2a5a;color:white"><th style="padding:6px;border:1px solid #ddd">Post</th><th style="padding:6px;border:1px solid #ddd">Rank</th><th style="padding:6px;border:1px solid #ddd">Candidate</th><th style="padding:6px;border:1px solid #ddd">Party</th><th style="padding:6px;border:1px solid #ddd">Votes</th><th style="padding:6px;border:1px solid #ddd">%</th><th style="padding:6px;border:1px solid #ddd">Status</th></tr>`;
+  let html=""; let rankHtml=`<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="background:#0f2a5a;color:white"><th style="padding:6px;border:1px solid #ddd">Post</th><th style="padding:6px;border:1px solid #ddd">Rank</th><th style="padding:6px;border:1px solid #ddd">Candidate</th><th style="padding:6px;border:1px solid #ddd">Votes</th><th style="padding:6px;border:1px solid #ddd">Status</th></tr>`;
   Object.values(byPost).forEach(post=>{
    const postTotal=Object.values(post.cands).reduce((s,x)=>s+x.count,0);
-   html+=`<div style="margin:20px 0;padding:15px;border:2px solid #0f2a5a;border-radius:10px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - ${postTotal} votes in ${currentOrgName||'All Orgs'}</h3>`;
+   html+=`<div style="margin:20px 0;padding:15px;border:2px solid #0f2a5a;border-radius:10px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - ${postTotal} votes</h3>`;
    const sorted=Object.values(post.cands).sort((a,b)=>a.rank-b.rank);
    sorted.forEach(c=>{
     const isWinner=c.rank===1 && c.count>0;
-    html+=`<div style="margin:10px 0;padding:8px;border-radius:6px;border:1px solid #ddd;${isWinner?'background:#e8f5e9;border:2px solid #27ae60':''}"><div style="display:flex;justify-content:space-between"><div style="display:flex;gap:10px"><img src="${c.photo}" width="40" height="40" style="border-radius:50%"><div><b>#${c.rank} ${c.name} ${isWinner?'<span class=badge-winner>WINNER</span>':''}</b><br><small>${c.party} | ${c.id}</small><br><small>${c.manifesto||''}</small></div></div><b>${c.count} (${c.percentage}%)</b></div><div style="background:#eee;height:14px;border-radius:10px;margin-top:6px"><div style="background:${isWinner?'#27ae60':'#3498db'};width:${c.percentage}%;height:100%"></div></div></div>`;
-    rankHtml+=`<tr style="${isWinner?'background:#e8f5e9;font-weight:bold':''}"><td style="padding:6px;border:1px solid #ddd">${post.name}</td><td style="padding:6px;border:1px solid #ddd">#${c.rank}</td><td style="padding:6px;border:1px solid #ddd">${c.name}</td><td style="padding:6px;border:1px solid #ddd">${c.party}</td><td style="padding:6px;border:1px solid #ddd">${c.count}</td><td style="padding:6px;border:1px solid #ddd">${c.percentage}%</td><td style="padding:6px;border:1px solid #ddd">${isWinner?'WINNER':''}</td></tr>`;
+    html+=`<div style="margin:8px 0;padding:8px;border-radius:6px;border:1px solid #ddd;${isWinner?'background:#e8f5e9;border:2px solid #27ae60':''}"><div style="display:flex;justify-content:space-between"><div style="display:flex;gap:8px"><img src="${c.photo}" width="40" height="40" style="border-radius:50%"><div><b>#${c.rank} ${c.name} ${isWinner?'<span class=badge-winner>WINNER</span>':''}</b><br><small>${c.party}</small></div></div><b>${c.count} (${c.percentage}%)</b></div></div>`;
+    rankHtml+=`<tr style="${isWinner?'background:#e8f5e9;font-weight:bold':''}"><td style="padding:6px;border:1px solid #ddd">${post.name}</td><td style="padding:6px;border:1px solid #ddd">#${c.rank}</td><td style="padding:6px;border:1px solid #ddd">${c.name}</td><td style="padding:6px;border:1px solid #ddd">${c.count}</td><td style="padding:6px;border:1px solid #ddd">${isWinner?'WINNER':''}</td></tr>`;
    });
    html+=`</div>`;
   });
@@ -131,59 +195,28 @@ function loadResults(){
 }
 
 window.exportFullDetails = function(){
- let csv = "\uFEFF"; // BOM for Excel
- csv += `SecureBallot FULL DETAILS EXPORT\n`;
- csv += `${esc("Organization")},${esc(currentOrgName||'All Organizations')}\n`;
- csv += `${esc("Exported At")},${esc(new Date().toLocaleString())}\n`;
- csv += `${esc("Total Votes")},${currentData.total}\n\n`;
-
- csv += "SECTION 1: RANK SUMMARY WITH FULL CANDIDATE DETAILS\n";
- csv += `${esc("Post Name")},${esc("Rank")},${esc("Candidate ID")},${esc("Candidate Name")},${esc("Party")},${esc("Manifesto")},${esc("Photo URL")},${esc("Votes")},${esc("Percentage")},${esc("Status")},${esc("Organization")},${esc("Org Slug")},${esc("Post ID")}\n`;
- Object.values(currentData.byPost||{}).forEach(post=>{
-  Object.values(post.cands).sort((a,b)=>a.rank-b.rank).forEach(c=>{
-   const status = c.rank===1 && c.count>0? "WINNER" : "";
-   csv += `${esc(post.name)},${esc(c.rank)},${esc(c.id)},${esc(c.name)},${esc(c.party)},${esc(c.manifesto)},${esc(c.photo)},${esc(c.count)},${esc(c.percentage+"%")},${esc(status)},${esc(c.org||currentOrgName)},${esc(c.orgSlug||currentOrgSlug)},${esc(c.postId)}\n`;
-  });
- });
-
- csv += "\nSECTION 2: DETAILED VOTE RECORDS\n";
- csv += `${esc("VoteID")},${esc("Organization")},${esc("Post Name")},${esc("Post ID")},${esc("Candidate Name")},${esc("Candidate ID")},${esc("Party")},${esc("Candidate Manifesto")},${esc("Candidate Photo")},${esc("Voter Name")},${esc("Voter ID")},${esc("Voter Hash")},${esc("Timestamp")}\n`;
- Object.entries(currentData.votes||{}).forEach(([voteId, v])=>{
-  const cand = currentData.candData[v.candidateId] || {};
-  csv += `${esc(voteId)},${esc(v.org||cand.org||currentOrgName)},${esc(cand.postName||v.postId)},${esc(v.postId)},${esc(cand.name)},${esc(v.candidateId)},${esc(cand.party)},${esc(cand.manifesto)},${esc(cand.photo)},${esc(v.voterName)},${esc(v.voterId)},${esc(v.voterIdHash)},${esc(v.timestamp)}\n`;
- });
-
- const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
- const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
- a.download=`FULL_DETAILS_${currentOrgSlug||'all'}_${Date.now()}.csv`; a.click();
+ if(!isSuper && currentOrgSlug!==adminOrgSlug){ alert("⛔ You can only export your own org"); return; }
+ let csv = "\uFEFF";
+ csv += `${esc("Organization")},${esc(currentOrgName||'All')}\n`;
+ csv += `${esc("Exported By")},${esc(adminEmail+" ("+role+")")}\n`;
+ csv += `${esc("Date")},${esc(new Date().toLocaleString())}\n\n`;
+ csv += `${esc("Post")},${esc("Rank")},${esc("Candidate")},${esc("Party")},${esc("Votes")},${esc("%")},${esc("Status")},${esc("ID")},${esc("Org")}\n`;
+ Object.values(currentData.byPost||{}).forEach(post=>{ Object.values(post.cands).sort((a,b)=>a.rank-b.rank).forEach(c=>{ csv += `${esc(post.name)},${esc(c.rank)},${esc(c.name)},${esc(c.party)},${esc(c.count)},${esc(c.percentage+"%")},${esc(c.rank===1 && c.count>0?"WINNER":"")},${esc(c.id)},${esc(currentOrgName)}\n`; }); });
+ csv += `\n${esc("VoteID")},${esc("Post")},${esc("Candidate")},${esc("Voter")},${esc("Timestamp")},${esc("Org")}\n`;
+ Object.entries(currentData.votes||{}).forEach(([id,v])=>{ const cand=currentData.candData[v.candidateId]||{}; csv+=`${esc(id)},${esc(cand.postName||v.postId)},${esc(cand.name)},${esc(v.voterName)},${esc(v.timestamp)},${esc(currentOrgName)}\n`; });
+ const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`RESULTS_${currentOrgSlug}_${Date.now()}.csv`; a.click();
 };
 
 window.exportRankSummary = function(){
- let csv = "\uFEFF";
- csv += `${esc("SecureBallot RANK SUMMARY")},${esc(currentOrgName||'All Organizations')}\n`;
- csv += `${esc("Date")},${esc(new Date().toLocaleString())}\n\n`;
- csv += `${esc("Rank")},${esc("Post Name")},${esc("Candidate Name")},${esc("Party")},${esc("Manifesto")},${esc("Votes")},${esc("Percentage")},${esc("Result")},${esc("Candidate ID")},${esc("Photo")},${esc("Organization")}\n`;
- Object.values(currentData.byPost||{}).forEach(post=>{
-  Object.values(post.cands).sort((a,b)=>a.rank-b.rank).forEach(c=>{
-   const result = c.rank===1 && c.count>0? "ELECTED" : c.rank===2? "RUNNER UP" : "";
-   csv += `${esc(c.rank)},${esc(post.name)},${esc(c.name)},${esc(c.party)},${esc(c.manifesto)},${esc(c.count)},${esc(c.percentage+"%")},${esc(result)},${esc(c.id)},${esc(c.photo)},${esc(currentOrgName||c.org)}\n`;
-  });
- });
- csv += "\nWINNERS LIST\n";
- csv += `${esc("Post")},${esc("Winner Name")},${esc("Party")},${esc("Votes")},${esc("Percentage")},${esc("Organization")}\n`;
- Object.values(currentData.byPost||{}).forEach(post=>{
-  const winner = Object.values(post.cands).sort((a,b)=>a.rank-b.rank)[0];
-  if(winner && winner.count>0){
-   csv += `${esc(post.name)},${esc(winner.name)},${esc(winner.party)},${esc(winner.count)},${esc(winner.percentage+"%")},${esc(currentOrgName||winner.org)}\n`;
-  }
- });
- const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
- const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
- a.download=`RANK_SUMMARY_${currentOrgSlug||'all'}_${Date.now()}.csv`; a.click();
+ if(!isSuper && currentOrgSlug!==adminOrgSlug){ alert("⛔ Restricted"); return; }
+ let csv = "\uFEFF"; csv+=`${esc("RANK SUMMARY")},${esc(currentOrgName)}\n\n`; csv+=`${esc("Rank")},${esc("Post")},${esc("Candidate")},${esc("Party")},${esc("Votes")},${esc("%")},${esc("Result")}\n`;
+ Object.values(currentData.byPost||{}).forEach(post=>{ Object.values(post.cands).sort((a,b)=>a.rank-b.rank).forEach(c=>{ csv+=`${esc(c.rank)},${esc(post.name)},${esc(c.name)},${esc(c.party)},${esc(c.count)},${esc(c.percentage+"%")},${esc(c.rank===1&&c.count>0?"ELECTED":"")}\n`; }); });
+ const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`RANK_${currentOrgSlug}_${Date.now()}.csv`; a.click();
 };
 
 window.clearResults = async function(){
- if(!confirm(`Clear votes for ${currentOrgName||'ALL ORGS'}?`)) return;
+ if(!isSuper){ alert("⛔ Only Super Admin can clear votes. You are restricted to "+currentOrgName); return; }
+ if(!confirm(`Clear votes for ${currentOrgName||'ALL'}?`)) return;
  const snap=await get(ref(db,"votes")); const all=snap.val()||{};
  if(currentOrgSlug){ for(let k in all){ if(isForMyOrg(all[k])) await remove(ref(db,`votes/${k}`)); } const vs=await get(ref(db,"voters")); const av=vs.val()||{}; for(let k in av){ if(isForMyOrg(av[k])) await remove(ref(db,`voters/${k}`)); } }
  else { await remove(ref(db,"votes")); await remove(ref(db,"voters")); }
