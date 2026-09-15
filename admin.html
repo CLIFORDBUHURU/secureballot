@@ -15,7 +15,7 @@ setInterval(checkOnline,3000);
 </script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Admin Panel - Multi-Org Cloud</title>
+<title>Admin Panel - Multi-Org Cloud - LOCKED</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -40,12 +40,21 @@ setInterval(checkOnline,3000);
 <button onclick="showTab('audit')">Audit</button>
 </div>
 
-<div id="tab-pending" class="card"><h3>Pending - Admin1 - <span id="pendingOrg"></span></h3><div id="pendingList"></div></div>
-<div id="tab-stage2" class="card hidden"><h3>Stage 2 - Admin2 - <span id="stage2Org"></span></h3><div id="stage2List"></div></div>
+<div id="tab-pending" class="card"><h3>Pending - <span id="pendingOrg"></span></h3><div id="pendingList"></div></div>
+<div id="tab-stage2" class="card hidden"><h3>Stage 2 - <span id="stage2Org"></span></h3><div id="stage2List"></div></div>
 <div id="tab-approved" class="card hidden"><h3>Approved Voters - <span id="approvedOrg"></span></h3><div id="approvedList"></div></div>
 
 <div id="tab-candidates" class="card hidden" style="border:2px solid #8e44ad">
 <h3>👥 Manage Posts & Candidates - <span id="candOrg"></span></h3>
+<!-- PUBLISH CONTROL - NEW -->
+<div style="margin:15px 0;padding:12px;background:#fff3cd;border:2px solid #ffc107;border-radius:8px">
+<h3 style="margin:0 0 5px 0">📢 Results Publishing Control</h3>
+<p style="font-size:12px;margin:2px 0">Voters can ONLY view live results when YOU publish them. Until then they see "Not Published".</p>
+<p style="margin:5px 0">Status: <b id="publishStatus">Checking...</b></p>
+<button id="publishBtn" onclick="toggleResultsPublish()" style="padding:10px 16px;border-radius:8px;border:none;font-weight:bold;background:#0f2a5a;color:white">Loading...</button>
+<p id="publishInfo" style="font-size:11px;color:#666;margin-top:5px"></p>
+</div>
+
 <div style="background:#f5eef8;padding:12px;border-radius:8px;margin-bottom:15px">
 <h4>Add Post / Position</h4>
 <input id="postName" placeholder="e.g. Chairperson, Secretary" />
@@ -67,14 +76,15 @@ setInterval(checkOnline,3000);
 
 <div id="tab-results" class="card hidden" style="border:2px solid #27ae60">
 <h3>📊 Live Results - <span id="resultsOrg"></span></h3>
+<p style="font-size:12px;background:#d4edda;padding:6px;border-radius:6px">You (Admin) can always see results even when hidden from voters. Voters see only after you Publish above.</p>
 <canvas id="adminChart" width="400" height="200"></canvas>
 <div id="resultBarsAdmin" style="margin-top:15px"></div>
 <p id="resultTotalAdmin" style="font-weight:bold"></p>
-<button onclick="exportResults()" class="btn-secondary">Export CSV</button>
+<button onclick="exportResults()" class="btn-secondary">Export CSV (Your Org Only)</button>
 </div>
 
-<div id="tab-voters" class="card hidden"><h3>Voted List</h3><div id="votersList"></div></div>
-<div id="tab-admins" class="card hidden"><h3>Admins for Org: <span id="adminsOrg"></span> (Super Admin Only)</h3><div id="adminCreateBox"></div><div id="adminsList"></div></div>
+<div id="tab-voters" class="card hidden"><h3>Voted List - <span id="votersOrg"></span></h3><div id="votersList"></div></div>
+<div id="tab-admins" class="card hidden"><h3>Admins for Org: <span id="adminsOrg"></span></h3><div id="adminCreateBox"></div><div id="adminsList"></div></div>
 <div id="tab-audit" class="card hidden"><h3>Audit Log - <span id="auditOrg"></span></h3><div id="auditList"></div></div>
 </div>
 
@@ -86,12 +96,17 @@ let role = localStorage.getItem("sb_admin_role");
 let user = localStorage.getItem("sb_admin_user");
 let org = localStorage.getItem("sb_admin_org") || "";
 let orgSlug = localStorage.getItem("sb_admin_orgSlug") || "";
+let adminEmail = localStorage.getItem("sb_admin_email") || "";
+
+// === GLOBAL MASTERS WHO CAN SEE ALL (YOU) ===
+const GLOBAL_MASTERS = ["cliford@gmail.com","clifordtech@gmail.com","admin@secureballot.co.ke"];
+let isGlobalMaster = GLOBAL_MASTERS.includes(adminEmail.toLowerCase());
+// ===========================================
 
 if (!localStorage.getItem("sb_is_admin")) {
  window.location.href = "admin-login.html";
 }
 
-// Fetch full admin record to get org if not in localStorage (multi-org migration)
 async function initAdmin(){
  const snap = await get(ref(db, `admins/${user}`));
  if(snap.exists()){
@@ -101,11 +116,14 @@ async function initAdmin(){
   localStorage.setItem("sb_admin_org", org);
   localStorage.setItem("sb_admin_orgSlug", orgSlug);
   document.getElementById("adminInfo").innerText = `${user} (${role})`;
-  document.getElementById("orgInfo").innerText = `🏢 ${org}`;
+  document.getElementById("orgInfo").innerText = `🏢 ${org} ${isGlobalMaster? '(PLATFORM OWNER)' : '(LOCKED)'}`;
   document.querySelectorAll('[id$="Org"]').forEach(el=>el.innerText = org);
   loadAll();
+  checkPublishStatus();
  } else {
   document.getElementById("adminInfo").innerText = `${user} (${role})`;
+  document.getElementById("orgInfo").innerText = `🏢 ${org}`;
+  loadAll();
  }
 }
 initAdmin();
@@ -117,11 +135,13 @@ window.showTab = function(tab){
 };
 window.logout = function(){ localStorage.clear(); window.location.href="admin-login.html"; };
 
+// === STRICT ISOLATION - NO LEAKAGE ===
 function isForMyOrg(item){
  if(!item) return false;
- // old data without org = show only if my org is the first org (backward compatibility)
- if(!item.org &&!item.orgSlug) return true;
- return (item.org === org) || (item.orgSlug === orgSlug) || (!org && true);
+ if(isGlobalMaster) return true; // only you see all
+ // For normal and superadmin at Kisiwa/Marble - MUST have matching orgSlug
+ if(!item.orgSlug) return false; // old data without orgSlug is hidden for security
+ return item.orgSlug === orgSlug;
 }
 
 function loadAll(){
@@ -150,7 +170,7 @@ function loadAll(){
  });
  onValue(ref(db, "voters"), s=>{ renderVoters(Object.fromEntries(Object.entries(s.val()||{}).filter(([k,v])=>isForMyOrg(v)))) });
  onValue(ref(db, "admins"), s=>{ renderAdmins(s.val()||{}) });
- onValue(ref(db, "audit"), s=>{ renderAudit(Object.fromEntries(Object.entries(s.val()||{}).filter(([k,v])=>!v.org || isForMyOrg(v) || v.action.includes(org)))) });
+ onValue(ref(db, "audit"), s=>{ renderAudit(Object.fromEntries(Object.entries(s.val()||{}).filter(([k,v])=>isForMyOrg(v)))) });
  onValue(ref(db, "posts"), s=>{ renderPosts(Object.fromEntries(Object.entries(s.val()||{}).filter(([k,v])=>isForMyOrg(v)))) });
  onValue(ref(db, "candidates"), s=>{ renderCandidatesAdmin(Object.fromEntries(Object.entries(s.val()||{}).filter(([k,v])=>isForMyOrg(v)))) });
 }
@@ -160,11 +180,12 @@ function renderStage2(data){ let h=""; Object.values(data).forEach(v=>{ h+=`<div
 function renderApproved(data){ let h=Object.values(data).map(v=>`<div style="padding:8px;border-bottom:1px solid #eee">${v.name} - ${v.id} - ${v.course||''}</div>`).join(""); document.getElementById("approvedList").innerHTML=h||"None for "+org; }
 function renderVoters(data){ let h=Object.values(data).map(v=>`<div style="padding:8px;border-bottom:1px solid #eee">${v.name} - ${v.id} - ${v.votedAt}</div>`).join(""); document.getElementById("votersList").innerHTML=h||"No votes yet for "+org; }
 function renderAdmins(data){
- let mine = Object.values(data).filter(a=>!org || a.org===org || a.orgSlug===orgSlug);
- let h=mine.map(a=>`<div style="padding:8px;border-bottom:1px solid #eee">${a.username} (${a.role}) - ${a.email} Active:${a.is_active} <button onclick="toggleAdmin('${a.username}',${!a.is_active})">${a.is_active?"Disable":"Enable"}</button></div>`).join("");
- document.getElementById("adminsList").innerHTML=h;
+ let mine = Object.values(data).filter(a=>a.orgSlug===orgSlug || (isGlobalMaster && true));
+ if(!isGlobalMaster) mine = mine.filter(a=>a.orgSlug===orgSlug);
+ let h=mine.map(a=>`<div style="padding:8px;border-bottom:1px solid #eee">${a.username} (${a.role}) - ${a.email} Active:${a.is_active} ${role==="superadmin"?`<button onclick="toggleAdmin('${a.username}',${!a.is_active})">${a.is_active?"Disable":"Enable"}</button>`:''}</div>`).join("");
+ document.getElementById("adminsList").innerHTML=h || "No admins";
  if(role==="superadmin"){
-  document.getElementById("adminCreateBox").innerHTML=`<input id="newAUser" placeholder="Username"><input id="newAEmail" placeholder="Email"><input id="newAPhone" placeholder="Phone"><select id="newARole"><option value="admin1">Admin1</option><option value="admin2">Admin2</option><option value="superadmin">SuperAdmin</option></select><input id="newAPass" placeholder="Password min 8"><button onclick="createAdmin()">Create Admin for ${org}</button><hr>`;
+  document.getElementById("adminCreateBox").innerHTML=`<div style="background:#f0f0f0;padding:10px;border-radius:6px"><input id="newAUser" placeholder="Username"><input id="newAEmail" placeholder="Email"><input id="newAPhone" placeholder="Phone"><select id="newARole"><option value="admin1">Admin1</option><option value="admin2">Admin2</option><option value="superadmin">SuperAdmin for ${org} only</option></select><input id="newAPass" placeholder="Password min 8"><button onclick="createAdmin()">Create Admin for ${org} (LOCKED)</button></div><hr>`;
  }
 }
 function renderAudit(data){ let arr=Object.values(data).sort((a,b)=>new Date(b.time)-new Date(a.time)).slice(0,100); document.getElementById("auditList").innerHTML=arr.map(l=>`<div style="font-size:12px;padding:4px;border-bottom:1px solid #eee">${l.time} - <b>${l.user}</b> - ${l.action}</div>`).join(""); }
@@ -178,9 +199,45 @@ function renderCandidatesAdmin(data){
  document.getElementById("candidatesAdminList").innerHTML=h||"No candidates for "+org;
 }
 
-window.approve1 = async function(id){ const s=await get(ref(db, `pending/${id}`)); const val=s.val(); await set(ref(db, `stage2/${id}`), {...val, org, orgSlug, stage1By:user, stage1At:new Date().toLocaleString()}); await remove(ref(db, `pending/${id}`)); await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action:`APPROVED STAGE1 ${id} for ${org}`, time:new Date().toLocaleString()}); };
-window.approve2 = async function(id){ const s=await get(ref(db, `stage2/${id}`)); const val=s.val(); await set(ref(db, `approved/${id}`), {...val, org, orgSlug, approvedAt:new Date().toLocaleString(), approvedBy:user}); await remove(ref(db, `stage2/${id}`)); await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action:`FINAL APPROVED ${id} for ${org}`, time:new Date().toLocaleString()}); };
-window.reject = async function(id,from){ await remove(ref(db, `${from}/${id}`)); await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action:`REJECTED ${id} from ${from} for ${org}`, time:new Date().toLocaleString()}); };
+// === PUBLISH CONTROL ===
+let resultsPublished = false;
+async function checkPublishStatus(){
+ try{
+  const snap = await get(ref(db, `orgs/${orgSlug}/settings/resultsPublished`));
+  const snapInfo = await get(ref(db, `orgs/${orgSlug}/settings`));
+  resultsPublished = snap.exists()? snap.val() : false;
+  const info = snapInfo.val() || {};
+  const statusEl = document.getElementById("publishStatus");
+  const btn = document.getElementById("publishBtn");
+  const infoEl = document.getElementById("publishInfo");
+  if(statusEl){
+    statusEl.innerText = resultsPublished? "✅ PUBLISHED - Voters CAN view results" : "🔒 HIDDEN - Voters CANNOT view results";
+    statusEl.style.color = resultsPublished? "#27ae60" : "#c0392b";
+  }
+  if(btn){
+    btn.innerText = resultsPublished? "🔒 Hide Results From Voters" : "✅ Publish Results For Voters";
+    btn.style.background = resultsPublished? "#c0392b" : "#27ae60";
+  }
+  if(infoEl){
+    infoEl.innerText = info.resultsPublishedAt? `Last action: ${info.resultsPublishedAt} by ${info.resultsPublishedBy||''}` : "";
+  }
+ } catch(e){ console.log(e); }
+}
+window.toggleResultsPublish = async function(){
+ const newVal =!resultsPublished;
+ if(!confirm(newVal? `Publish results for ${org}? Voters of ${org} will now see live results.` : `Hide results for ${org}? Voters of ${org} will be blocked.`)) return;
+ await set(ref(db, `orgs/${orgSlug}/settings/resultsPublished`), newVal);
+ await set(ref(db, `orgs/${orgSlug}/settings/resultsPublishedAt`), new Date().toLocaleString());
+ await set(ref(db, `orgs/${orgSlug}/settings/resultsPublishedBy`), adminEmail || user);
+ await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action: newVal? `PUBLISHED RESULTS for ${org}` : `HIDED RESULTS for ${org}`, time:new Date().toLocaleString()});
+ resultsPublished = newVal;
+ checkPublishStatus();
+ alert(newVal? "✅ Results Published for "+org : "🔒 Results Hidden for "+org);
+};
+
+window.approve1 = async function(id){ const s=await get(ref(db, `pending/${id}`)); const val=s.val(); if(!isForMyOrg(val)){alert("⛔ Not your org"); return;} await set(ref(db, `stage2/${id}`), {...val, org, orgSlug, stage1By:user, stage1At:new Date().toLocaleString()}); await remove(ref(db, `pending/${id}`)); await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action:`APPROVED STAGE1 ${id} for ${org}`, time:new Date().toLocaleString()}); };
+window.approve2 = async function(id){ const s=await get(ref(db, `stage2/${id}`)); const val=s.val(); if(!isForMyOrg(val)){alert("⛔ Not your org"); return;} await set(ref(db, `approved/${id}`), {...val, org, orgSlug, approvedAt:new Date().toLocaleString(), approvedBy:user}); await remove(ref(db, `stage2/${id}`)); await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action:`FINAL APPROVED ${id} for ${org}`, time:new Date().toLocaleString()}); };
+window.reject = async function(id,from){ const s=await get(ref(db, `${from}/${id}`)); if(!isForMyOrg(s.val())){alert("⛔ Not your org"); return;} await remove(ref(db, `${from}/${id}`)); await set(ref(db, `audit/${Date.now()}`), {user, org, orgSlug, action:`REJECTED ${id} from ${from} for ${org}`, time:new Date().toLocaleString()}); };
 window.toggleAdmin = async function(u,st){ if(role!=="superadmin"){alert("Only SuperAdmin"); return;} await update(ref(db, `admins/${u}`), {is_active:st}); };
 window.createAdmin = async function(){
  const u=document.getElementById("newAUser").value.trim();
@@ -190,7 +247,7 @@ window.createAdmin = async function(){
  const pass=document.getElementById("newAPass").value;
  if(u.length<3||pass.length<8){alert("Fill username pass 8"); return;}
  await set(ref(db, `admins/${u}`), {username:u, password:btoa(pass), role:r, email:e, phone:p, org, orgSlug, is_active:true, must_change_password:true, created:new Date().toLocaleString()});
- alert(`Admin ${u} created for ${org}!`);
+ alert(`Admin ${u} created for ${org} ONLY - Cannot access other orgs!`);
 };
 window.addPost = async function(){
  const name=document.getElementById("postName").value.trim(); if(!name){alert("Enter post"); return;}
@@ -198,7 +255,7 @@ window.addPost = async function(){
  await set(ref(db, `posts/${id}`), {id, name, org, orgSlug, created:new Date().toLocaleString(), by:user});
  document.getElementById("postName").value="";
 };
-window.deletePost = async function(id){ if(!confirm("Delete post and its candidates?")) return; await remove(ref(db, `posts/${id}`)); const snap=await get(ref(db, "candidates")); const all=snap.val()||{}; for(let cid in all){ if(all[cid].postId===id && isForMyOrg(all[cid])) await remove(ref(db, `candidates/${cid}`)); } };
+window.deletePost = async function(id){ const snap=await get(ref(db, `posts/${id}`)); if(!isForMyOrg(snap.val())){alert("⛔ Not your org"); return;} if(!confirm("Delete post and its candidates?")) return; await remove(ref(db, `posts/${id}`)); const snap2=await get(ref(db, "candidates")); const all=snap2.val()||{}; for(let cid in all){ if(all[cid].postId===id && isForMyOrg(all[cid])) await remove(ref(db, `candidates/${cid}`)); } };
 window.addCandidate = async function(){
  const postId=document.getElementById("candPost").value;
  const name=document.getElementById("candName").value.trim();
@@ -206,13 +263,13 @@ window.addCandidate = async function(){
  const manifesto=document.getElementById("candManifesto").value.trim()||"";
  const photo=document.getElementById("candPhoto").value.trim()||`https://i.pravatar.cc/100?img=${Math.floor(Math.random()*70)}`;
  if(!postId||!name){ document.getElementById("candMsg").innerText="❌ Select post and name"; return; }
- const postSnap=await get(ref(db, `posts/${postId}`)); const postName=postSnap.val()?.name||postId;
+ const postSnap=await get(ref(db, `posts/${postId}`)); if(!isForMyOrg(postSnap.val())){alert("⛔ Not your org post"); return;} const postName=postSnap.val()?.name||postId;
  const id=Date.now().toString();
  await set(ref(db, `candidates/${id}`), {id, postId, postName, name, party, manifesto, photo, org, orgSlug, created:new Date().toLocaleString()});
  document.getElementById("candMsg").innerText=`✅ ${name} added for ${postName} in ${org}`;
  document.getElementById("candName").value=""; document.getElementById("candParty").value=""; document.getElementById("candManifesto").value=""; document.getElementById("candPhoto").value="";
 };
-window.deleteCandidate = async function(id){ if(!confirm("Delete candidate?")) return; await remove(ref(db, `candidates/${id}`)); };
+window.deleteCandidate = async function(id){ const s=await get(ref(db, `candidates/${id}`)); if(!isForMyOrg(s.val())){alert("⛔ Not your org"); return;} if(!confirm("Delete candidate?")) return; await remove(ref(db, `candidates/${id}`)); };
 
 let adminChart=null;
 window.loadResultsAdmin = function(){
@@ -223,15 +280,15 @@ window.loadResultsAdmin = function(){
   const votes=Object.fromEntries(Object.entries(allVotes).filter(([k,v])=>isForMyOrg(v)));
   const byPost={}; Object.values(candData).forEach(c=>{ if(!byPost[c.postId]) byPost[c.postId]={name:c.postName, cands:{}}; byPost[c.postId].cands[c.id]={...c,count:0}; });
   Object.values(votes).forEach(v=>{ if(byPost[v.postId] && byPost[v.postId].cands[v.candidateId]) byPost[v.postId].cands[v.candidateId].count++; });
-  let html=""; Object.values(byPost).forEach(post=>{ html+=`<div style="margin:15px 0;padding:10px;border:1px solid #27ae60;border-radius:8px"><h4>${post.name}</h4>`; Object.values(post.cands).forEach(c=>{ const total=Object.values(post.cands).reduce((s,x)=>s+x.count,0); const per=total?Math.round((c.count/total)*100):0; html+=`<div style="display:flex;justify-content:space-between;font-size:13px"><b>${c.name} (${c.party})</b><span>${c.count} (${per}%)</span></div><div style="background:#eee;height:12px;border-radius:6px;margin:4px 0 10px"><div style="background:#27ae60;width:${per}%;height:100%"></div></div>`; }); html+=`</div>`; });
+  let html=""; Object.values(byPost).forEach(post=>{ html+=`<div style="margin:15px 0;padding:10px;border:1px solid #27ae60;border-radius:8px"><h4>${post.name} - ${org}</h4>`; Object.values(post.cands).forEach(c=>{ const total=Object.values(post.cands).reduce((s,x)=>s+x.count,0); const per=total?Math.round((c.count/total)*100):0; html+=`<div style="display:flex;justify-content:space-between;font-size:13px"><b>${c.name} (${c.party})</b><span>${c.count} (${per}%)</span></div><div style="background:#eee;height:12px;border-radius:6px;margin:4px 0 10px"><div style="background:#27ae60;width:${per}%;height:100%"></div></div>`; }); html+=`</div>`; });
   document.getElementById("resultBarsAdmin").innerHTML=html||"No candidates/votes for "+org;
-  document.getElementById("resultTotalAdmin").innerText=`Total Vote Records for ${org}: ${Object.keys(votes).length}`;
+  document.getElementById("resultTotalAdmin").innerText=`Total Vote Records for ${org}: ${Object.keys(votes).length} (Other orgs hidden)`;
  }, {onlyOnce:true});
 };
 window.exportResults = async function(){
  const s=await get(ref(db, "votes")); const all=s.val()||{}; const votes=Object.fromEntries(Object.entries(all).filter(([k,v])=>isForMyOrg(v)));
  let csv="org,postId,candidateId,hash,time\n"; Object.values(votes).forEach(v=>{ csv+=`${v.org||org},${v.postId},${v.candidateId},${v.voterIdHash},${v.timestamp}\n`; });
- const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`results_${orgSlug}.csv`; a.click();
+ const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`results_${orgSlug}_${Date.now()}.csv`; a.click();
 };
 showTab("pending");
 </script>
