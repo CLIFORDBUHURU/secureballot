@@ -6,8 +6,7 @@ function checkOnline(){
  if(!navigator.onLine){
   document.body.innerHTML=`<div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#0f2a5a;color:white;text-align:center;padding:20px;font-family:sans-serif"><div><h1>🔴 No Internet</h1><h3>SecureBallot Works Online Only</h3><p>Connect to WiFi/Data to vote.</p><button onclick="location.reload()" style="padding:12px 20px;border-radius:8px;border:none;margin-top:20px;font-weight:bold">Retry</button></div></div>`;
   return false;
- }
- return true;
+ } return true;
 }
 window.addEventListener("load", checkOnline);
 window.addEventListener("offline", checkOnline);
@@ -43,7 +42,8 @@ select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #
 <input type="text" id="idNumber" placeholder="Enter Approved ID Number" />
 <button onclick="verifyVoterMode2()" class="vote-btn">Verify & Proceed to Ballot →</button>
 <p id="verifyMsg" class="note"></p>
-<p class="note"><a href="register.html">Register Here</a> | <a href="results.html">Live Results</a> | <a href="admin-login.html">Admin</a></p>
+<p class="note"><a href="register.html">Register Here</a> | <a href="admin-login.html">Admin</a></p>
+<p style="font-size:11px;color:#c0392b">⛔ Live Results are hidden until you login and vote. This prevents influencing voters.</p>
 </div>
 </div>
 
@@ -53,6 +53,7 @@ select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #
 <p style="background:#e8f5e9;padding:8px;border-radius:6px">Organization: <b id="voteOrg"></b></p>
 <div id="ballotPosts"></div>
 <button class="vote-btn" onclick="submitVote()">Submit All Votes →</button>
+<p style="margin-top:15px;text-align:center"><a href="results.html" style="color:#0f2a5a;font-weight:bold">📊 View Live Results After Voting</a></p>
 </div>
 
 <script type="module">
@@ -73,24 +74,17 @@ async function loadOrgs(){
   allOrgs[slugify(oldSnap.val().name)]={name:oldSnap.val().name, slug:slugify(oldSnap.val().name)};
  }
  const sel=document.getElementById("orgSelect");
- if(Object.keys(allOrgs).length===0){
-  sel.innerHTML='<option>No org setup yet</option>';
-  return;
- }
+ if(Object.keys(allOrgs).length===0){ sel.innerHTML='<option>No org setup yet</option>'; return; }
  let opts='<option value="">-- Select Your Organization --</option>';
  Object.values(allOrgs).forEach(o=>{ opts+=`<option value="${o.slug}">${o.name}</option>`; });
  sel.innerHTML=opts;
-
  const urlParams=new URLSearchParams(window.location.search);
  const orgParam=urlParams.get("org");
  if(orgParam && allOrgs[orgParam]){
-  sel.value=orgParam;
-  currentOrgSlug=orgParam;
-  currentOrgName=allOrgs[orgParam].name;
+  sel.value=orgParam; currentOrgSlug=orgParam; currentOrgName=allOrgs[orgParam].name;
   document.getElementById("orgDisplay").innerText=currentOrgName;
   document.getElementById("voterStatus").innerText=currentOrgName;
  }
-
  sel.addEventListener("change", e=>{
   currentOrgSlug=e.target.value;
   currentOrgName= currentOrgSlug? allOrgs[currentOrgSlug]?.name : "";
@@ -109,12 +103,18 @@ window.verifyVoterMode2 = async function(){
  currentOrgSlug=orgSlug;
  currentOrgName=allOrgs[orgSlug]?.name||orgSlug;
 
- // Check if already voted in this org
  const votedSnap=await get(ref(db, `voters/${id}`));
  if(votedSnap.exists()){
   const v=votedSnap.val();
   if(!v.orgSlug || v.orgSlug===currentOrgSlug){
-   document.getElementById("verifyMsg").innerText="❌ Already voted in this organization! One vote per ID.";
+   // Already voted - allow to see results but not vote again
+   localStorage.setItem("sb_voter_verified","true");
+   localStorage.setItem("sb_voter_id",id);
+   localStorage.setItem("sb_voter_orgSlug",currentOrgSlug);
+   localStorage.setItem("sb_voter_org",currentOrgName);
+   localStorage.setItem("sb_voter_has_voted","true");
+   localStorage.setItem("sb_voter_name",v.name||id);
+   document.getElementById("verifyMsg").innerHTML=`✅ Already voted in ${currentOrgName}.<br><a href="results.html?org=${currentOrgSlug}" style="color:#27ae60;font-weight:bold">Click here to view Live Results →</a>`;
    return;
   }
  }
@@ -134,11 +134,19 @@ window.verifyVoterMode2 = async function(){
 
  const approvedVal=approvedSnap.val();
  if(approvedVal.orgSlug && approvedVal.orgSlug!==currentOrgSlug){
-  document.getElementById("verifyMsg").innerText=`❌ This ID belongs to '${approvedVal.org}' not '${currentOrgName}'. Select correct organization.`;
+  document.getElementById("verifyMsg").innerText=`❌ This ID belongs to '${approvedVal.org}' not '${currentOrgName}'.`;
   return;
  }
 
  currentVoter=approvedVal;
+ // SET VOTER SESSION - REQUIRED FOR RESULTS PAGE
+ localStorage.setItem("sb_voter_verified","true");
+ localStorage.setItem("sb_voter_id",approvedVal.id);
+ localStorage.setItem("sb_voter_orgSlug",currentOrgSlug);
+ localStorage.setItem("sb_voter_org",currentOrgName);
+ localStorage.setItem("sb_voter_name",approvedVal.name);
+ localStorage.setItem("sb_voter_has_voted","false");
+
  document.getElementById("loginBox").classList.add("hidden");
  document.getElementById("voteBox").classList.remove("hidden");
  document.getElementById("welcomeVoter").innerText=`Welcome ${currentVoter.name} (ID: ${currentVoter.id})`;
@@ -151,7 +159,6 @@ window.verifyVoterMode2 = async function(){
 function loadBallot(){
  onValue(ref(db, "candidates"), (snap)=>{
   const all=snap.val()||{};
-  // filter candidates for my org only
   const data=Object.fromEntries(Object.entries(all).filter(([k,v])=>!v.orgSlug || v.orgSlug===currentOrgSlug));
   const posts={};
   Object.values(data).forEach(c=>{
@@ -159,7 +166,7 @@ function loadBallot(){
    posts[c.postId].candidates.push(c);
   });
   let html="";
-  if(Object.keys(posts).length===0){ html=`<p>No candidates added yet for <b>${currentOrgName}</b>. Contact Admin.</p>`; }
+  if(Object.keys(posts).length===0){ html=`<p>No candidates added yet for <b>${currentOrgName}</b>.</p>`; }
   Object.entries(posts).forEach(([postId, post])=>{
    html+=`<div style="margin:20px 0;border:2px solid #0f2a5a;border-radius:10px;padding:15px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - Select 1</h3>`;
    post.candidates.forEach(c=>{
@@ -210,8 +217,9 @@ window.submitVote = async function(){
   action: `VOTED - ${currentVoter.name} in ${currentOrgName} for ${Object.keys(selectedVotes).length} posts`,
   time: new Date().toLocaleString()
  });
- alert(`✅ Votes submitted to ${currentOrgName} cloud! Thank you.`);
- location.reload();
+ localStorage.setItem("sb_voter_has_voted","true");
+ alert(`✅ Votes submitted to ${currentOrgName} cloud! Now you can view live results.`);
+ window.location.href=`results.html?org=${currentOrgSlug}`;
 };
 
 loadOrgs();
