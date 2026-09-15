@@ -24,6 +24,7 @@ setInterval(checkOnline,3000);
 .check{display:none;font-weight:bold;color:#27ae60;margin-left:auto}
 .candidate.selected.check{display:block}
 select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #ccc}
+#thankYouBox{text-align:center;padding:30px;background:white;border-radius:12px;border:3px solid #27ae60}
 </style>
 </head>
 <body>
@@ -38,12 +39,11 @@ select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #
 <p>Select your Organization first, then enter approved ID.</p>
 <select id="orgSelect"><option>Loading organizations...</option></select>
 <p style="font-size:12px">Organization: <b id="orgDisplay">Select above</b></p>
-
 <input type="text" id="idNumber" placeholder="Enter Approved ID Number" />
 <button onclick="verifyVoterMode2()" class="vote-btn">Verify & Proceed to Ballot →</button>
 <p id="verifyMsg" class="note"></p>
 <p class="note"><a href="register.html">Register Here</a> | <a href="admin-login.html">Admin</a></p>
-<p style="font-size:11px;color:#c0392b">⛔ Live Results are hidden until you login and vote. This prevents influencing voters.</p>
+<p style="font-size:11px;color:#c0392b">⛔ Live Results are hidden until you vote.</p>
 </div>
 </div>
 
@@ -52,8 +52,27 @@ select{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:1px solid #
 <p id="welcomeVoter"></p>
 <p style="background:#e8f5e9;padding:8px;border-radius:6px">Organization: <b id="voteOrg"></b></p>
 <div id="ballotPosts"></div>
-<button class="vote-btn" onclick="submitVote()">Submit All Votes →</button>
-<p style="margin-top:15px;text-align:center"><a href="results.html" style="color:#0f2a5a;font-weight:bold">📊 View Live Results After Voting</a></p>
+<button class="vote-btn" id="submitBtn" onclick="submitVote()">Submit All Votes →</button>
+</div>
+
+<!-- THANK YOU POPUP - NO REDIRECT -->
+<div class="container hidden" id="thankYouBox">
+<div class="card" style="text-align:center;border:3px solid #27ae60">
+<h1 style="color:#27ae60">✅ Thank You!</h1>
+<h2 id="thankName"></h2>
+<p id="thankOrg" style="background:#0f2a5a;color:white;padding:8px;border-radius:6px;display:inline-block"></p>
+<p style="margin-top:15px">Your vote has been securely recorded in the cloud.<br>You cannot vote again in this organization.</p>
+<div style="background:#f8f9fa;padding:12px;border-radius:8px;margin:15px 0;text-align:left">
+<p>✔️ Votes submitted: <b id="thankCount"></b> post(s)</p>
+<p>✔️ Time: <b id="thankTime"></b></p>
+<p>✔️ Voter ID: <b id="thankId"></b></p>
+</div>
+<p style="font-size:12px;color:#666">You can now safely close this page or view results.</p>
+<div style="display:flex;gap:10px;justify-content:center;margin-top:15px">
+<button onclick="viewResultsAfterVote()" style="background:#0f2a5a;color:white;padding:10px 16px;border-radius:8px;border:none;font-weight:bold">📊 View Live Results</button>
+<button onclick="location.reload()" style="background:#95a5a6;color:white;padding:10px 16px;border-radius:8px;border:none">Logout</button>
+</div>
+</div>
 </div>
 
 <script type="module">
@@ -94,12 +113,12 @@ async function loadOrgs(){
 }
 
 window.verifyVoterMode2 = async function(){
- if(!navigator.onLine){ alert("🔴 No Internet - Online only"); return; }
+ if(!navigator.onLine){ alert("🔴 No Internet"); return; }
  const orgSlug=document.getElementById("orgSelect").value.trim();
  const id=document.getElementById("idNumber").value.trim();
  if(!orgSlug){ document.getElementById("verifyMsg").innerText="❌ Select Organization first"; return; }
  if(!id){ document.getElementById("verifyMsg").innerText="Enter ID"; return; }
- document.getElementById("verifyMsg").innerText=`Checking cloud for ${allOrgs[orgSlug]?.name}...`;
+ document.getElementById("verifyMsg").innerText=`Checking ${allOrgs[orgSlug]?.name}...`;
  currentOrgSlug=orgSlug;
  currentOrgName=allOrgs[orgSlug]?.name||orgSlug;
 
@@ -107,14 +126,8 @@ window.verifyVoterMode2 = async function(){
  if(votedSnap.exists()){
   const v=votedSnap.val();
   if(!v.orgSlug || v.orgSlug===currentOrgSlug){
-   // Already voted - allow to see results but not vote again
-   localStorage.setItem("sb_voter_verified","true");
-   localStorage.setItem("sb_voter_id",id);
-   localStorage.setItem("sb_voter_orgSlug",currentOrgSlug);
-   localStorage.setItem("sb_voter_org",currentOrgName);
-   localStorage.setItem("sb_voter_has_voted","true");
-   localStorage.setItem("sb_voter_name",v.name||id);
-   document.getElementById("verifyMsg").innerHTML=`✅ Already voted in ${currentOrgName}.<br><a href="results.html?org=${currentOrgSlug}" style="color:#27ae60;font-weight:bold">Click here to view Live Results →</a>`;
+   // ALREADY VOTED - SHOW THANK YOU AND BLOCK
+   showThankYou(v.name||id, id, currentOrgName, "-", true);
    return;
   }
  }
@@ -128,7 +141,7 @@ window.verifyVoterMode2 = async function(){
   else if(s2.exists() && (!s2.val().orgSlug || s2.val().orgSlug===currentOrgSlug))
    document.getElementById("verifyMsg").innerText=`⏳ Waiting final approval in ${currentOrgName}.`;
   else
-   document.getElementById("verifyMsg").innerText=`❌ ID not found in ${currentOrgName}. Select correct org or register.`;
+   document.getElementById("verifyMsg").innerText=`❌ ID not found in ${currentOrgName}.`;
   return;
  }
 
@@ -139,7 +152,6 @@ window.verifyVoterMode2 = async function(){
  }
 
  currentVoter=approvedVal;
- // SET VOTER SESSION - REQUIRED FOR RESULTS PAGE
  localStorage.setItem("sb_voter_verified","true");
  localStorage.setItem("sb_voter_id",approvedVal.id);
  localStorage.setItem("sb_voter_orgSlug",currentOrgSlug);
@@ -166,7 +178,7 @@ function loadBallot(){
    posts[c.postId].candidates.push(c);
   });
   let html="";
-  if(Object.keys(posts).length===0){ html=`<p>No candidates added yet for <b>${currentOrgName}</b>.</p>`; }
+  if(Object.keys(posts).length===0){ html=`<p>No candidates for <b>${currentOrgName}</b>.</p>`; }
   Object.entries(posts).forEach(([postId, post])=>{
    html+=`<div style="margin:20px 0;border:2px solid #0f2a5a;border-radius:10px;padding:15px"><h3 style="background:#0f2a5a;color:white;padding:8px;border-radius:6px">🗳️ ${post.name} - Select 1</h3>`;
    post.candidates.forEach(c=>{
@@ -185,41 +197,75 @@ window.selectCandidate=function(postId,candId,el){
  selectedVotes[postId]=candId;
 };
 
+function showThankYou(name, id, org, count, alreadyVoted=false){
+ document.getElementById("loginBox").classList.add("hidden");
+ document.getElementById("voteBox").classList.add("hidden");
+ document.getElementById("thankYouBox").classList.remove("hidden");
+ document.getElementById("thankName").innerText=alreadyVoted? `${name} - Already Voted` : name;
+ document.getElementById("thankOrg").innerText=org;
+ document.getElementById("thankCount").innerText=alreadyVoted? "Already submitted" : count;
+ document.getElementById("thankTime").innerText=new Date().toLocaleString();
+ document.getElementById("thankId").innerText=id;
+ document.getElementById("voterStatus").innerText=alreadyVoted? `Already Voted - ${org}` : `Voted - ${org}`;
+ // Disable submit
+ document.getElementById("submitBtn").disabled=true;
+ document.getElementById("submitBtn").innerText="✅ Already Voted - Cannot Vote Again";
+}
+
+window.viewResultsAfterVote=function(){
+ // Allow viewing results only after voting, but not auto-redirect
+ const orgSlug = localStorage.getItem("sb_voter_orgSlug") || currentOrgSlug;
+ window.location.href=`results.html?org=${orgSlug}`;
+};
+
 window.submitVote = async function(){
  if(!navigator.onLine){ alert("🔴 No Internet!"); return; }
  if(Object.keys(selectedVotes).length===0){ alert("Select at least one candidate"); return; }
- if(!confirm(`Confirm votes for ${Object.keys(selectedVotes).length} post(s) in ${currentOrgName}? Cannot change!`)) return;
+ if(!confirm(`Confirm votes for ${Object.keys(selectedVotes).length} post(s) in ${currentOrgName}? Cannot change after!`)) return;
 
- for(let postId in selectedVotes){
-  const voteId=Date.now()+"_"+postId+"_"+Math.floor(Math.random()*1000);
-  await set(ref(db, `votes/${voteId}`), {
-   candidateId: selectedVotes[postId],
-   postId: postId,
+ const btn=document.getElementById("submitBtn");
+ btn.disabled=true;
+ btn.innerText="Submitting... Please wait";
+
+ try{
+  for(let postId in selectedVotes){
+   const voteId=Date.now()+"_"+postId+"_"+Math.floor(Math.random()*1000);
+   await set(ref(db, `votes/${voteId}`), {
+    candidateId: selectedVotes[postId],
+    postId: postId,
+    org: currentOrgName,
+    orgSlug: currentOrgSlug,
+    voterIdHash: btoa(currentVoter.id).substring(0,10),
+    voterId: currentVoter.id,
+    voterName: currentVoter.name,
+    timestamp: new Date().toLocaleString()
+   });
+  }
+  await set(ref(db, `voters/${currentVoter.id}`), {
+   id: currentVoter.id,
+   name: currentVoter.name,
    org: currentOrgName,
    orgSlug: currentOrgSlug,
-   voterIdHash: btoa(currentVoter.id).substring(0,10),
-   voterId: currentVoter.id,
-   voterName: currentVoter.name,
-   timestamp: new Date().toLocaleString()
+   votedAt: new Date().toLocaleString()
   });
+  await set(ref(db, `audit/${Date.now()}`), {
+   user: `VOTER-${currentVoter.id}`,
+   org: currentOrgName,
+   orgSlug: currentOrgSlug,
+   action: `VOTED - ${currentVoter.name} in ${currentOrgName} for ${Object.keys(selectedVotes).length} posts`,
+   time: new Date().toLocaleString()
+  });
+
+  localStorage.setItem("sb_voter_has_voted","true");
+
+  // SHOW THANK YOU POPUP - NO AUTO REDIRECT
+  showThankYou(currentVoter.name, currentVoter.id, currentOrgName, Object.keys(selectedVotes).length, false);
+
+ } catch(e){
+  alert("❌ Error: "+e.message);
+  btn.disabled=false;
+  btn.innerText="Submit All Votes →";
  }
- await set(ref(db, `voters/${currentVoter.id}`), {
-  id: currentVoter.id,
-  name: currentVoter.name,
-  org: currentOrgName,
-  orgSlug: currentOrgSlug,
-  votedAt: new Date().toLocaleString()
- });
- await set(ref(db, `audit/${Date.now()}`), {
-  user: `VOTER-${currentVoter.id}`,
-  org: currentOrgName,
-  orgSlug: currentOrgSlug,
-  action: `VOTED - ${currentVoter.name} in ${currentOrgName} for ${Object.keys(selectedVotes).length} posts`,
-  time: new Date().toLocaleString()
- });
- localStorage.setItem("sb_voter_has_voted","true");
- alert(`✅ Votes submitted to ${currentOrgName} cloud! Now you can view live results.`);
- window.location.href=`results.html?org=${currentOrgSlug}`;
 };
 
 loadOrgs();
